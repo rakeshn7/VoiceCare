@@ -205,15 +205,15 @@ RLS is enabled on all nine tables. RLS policies control row visibility, while SQ
 | `patients` | SELECT | `authenticated` | `(id = auth.uid() AND public.is_patient()) OR public.is_admin()` | Private to owning patient & admin. Doctors strictly blocked. |
 | `patients` | INSERT | `authenticated` | `id = auth.uid() AND public.is_patient()` | Only patients onboard patient demographic profile |
 | `patients` | UPDATE | `authenticated` | `(id = auth.uid() AND public.is_patient()) OR public.is_admin()` | Edit own clinical profile |
-| `doctors` | SELECT | `authenticated` | `(is_approved = true AND is_active = true) OR (id = auth.uid() AND public.is_doctor()) OR public.is_admin()` | Approved & active directory view; doctor sees self; admin sees all |
+| `doctors` | SELECT | `authenticated` | `(is_approved = true AND is_active = true) OR id = auth.uid() OR public.is_admin()` | Approved & active directory view; doctor/applicant sees self; admin sees all |
 | `doctors` | INSERT | `authenticated` | `public.is_admin()` | Direct client INSERT revoked; handled via Part 4 RPC |
 | `doctors` | UPDATE | `authenticated` | `(id = auth.uid() AND public.is_doctor()) OR public.is_admin()` | Doctor edits practice profile (ratings/approval locked) |
-| `doctor_verifications` | SELECT | `authenticated` | `(doctor_id = auth.uid() AND public.is_doctor()) OR public.is_admin()` | Doctor tracks status; admin reviews queue |
+| `doctor_verifications` | SELECT | `authenticated` | `doctor_id = auth.uid() OR public.is_admin()` | Doctor/applicant tracks status; admin reviews queue |
 | `doctor_verifications` | INSERT | `authenticated` | `public.is_admin()` | Direct client INSERT revoked; handled via Part 4 RPC |
 | `doctor_verifications` | UPDATE | `authenticated` | `public.is_admin()` | Only admins review & decide on verifications (Part 5 server-side RPC) |
-| `doctor_documents` | SELECT | `authenticated` | `(doctor_id = auth.uid() AND public.is_doctor()) OR public.is_admin()` | Credentials private to owning doctor and admin |
-| `doctor_documents` | INSERT | `authenticated` | `(doctor_id = auth.uid() AND public.is_doctor()) OR public.is_admin()` | Owning doctor or admin uploads document metadata |
-| `doctor_documents` | DELETE | `authenticated` | `(doctor_id = auth.uid() AND public.is_doctor()) OR public.is_admin()` | Owning doctor or admin removes document metadata |
+| `doctor_documents` | SELECT | `authenticated` | `doctor_id = auth.uid() OR public.is_admin()` | Credentials private to owning doctor/applicant and admin |
+| `doctor_documents` | INSERT | `authenticated` | *None (Revoked)* | Direct client INSERT revoked; handled exclusively via Part 4 RPCs |
+| `doctor_documents` | DELETE | `authenticated` | `doctor_id = auth.uid() OR public.is_admin()` | Owning doctor/applicant or admin removes document metadata |
 | `doctor_schedules` | SELECT | `authenticated` | `(doctor_id = auth.uid() AND public.is_doctor()) OR public.is_admin() OR (is_active = true AND EXISTS (SELECT 1 FROM public.doctors d WHERE d.id = doctor_schedules.doctor_id AND d.is_approved = true AND d.is_active = true))` | Active shifts of approved & active doctors queryable; doctor sees own shifts; admin sees all |
 | `doctor_schedules` | ALL | `authenticated` | `(doctor_id = auth.uid() AND public.is_doctor()) OR public.is_admin()` | Only doctors/admins configure recurring shifts |
 | `doctor_leaves` | SELECT | `authenticated` | `(doctor_id = auth.uid() AND public.is_doctor()) OR public.is_admin()` | Full leaves (with reasons) private to doctor/admin |
@@ -222,8 +222,9 @@ RLS is enabled on all nine tables. RLS policies control row visibility, while SQ
 | `in_app_reminders` | SELECT | `authenticated` | `patient_id = auth.uid() OR public.is_admin()` | Notification inbox private to patient |
 
 > [!IMPORTANT]
-> **No Direct Client Mutations on Appointments, Reminders, or Verifications:**  
+> **No Direct Client Mutations on Appointments, Reminders, Verifications, or Document Metadata:**  
 > - Direct `INSERT`, `UPDATE`, and `DELETE` on `public.appointments` and `public.in_app_reminders` are **completely revoked** from `authenticated`. All consultation bookings, reschedules, cancellations, doctor responses, and reminder dismissals must execute through atomic `SECURITY DEFINER` RPCs in Part 4.  
+> - Direct `INSERT` on `public.doctor_documents` is **completely revoked** from `authenticated`. All document metadata creation must route through authorized `SECURITY DEFINER` RPCs (`submit_doctor_application` and `register_doctor_document`) in Part 4 to enforce doctor row locks and quota limits.  
 > - Direct `UPDATE` and `DELETE` on `public.doctor_verifications` are **completely revoked** from client roles at both table and column levels. Part 5 must perform verification-status changes through a trusted server-side `SECURITY DEFINER` function (e.g. `public.review_doctor_application()`) that validates the caller's administrator role and invokes the approval synchronization trigger.
 
 ---
@@ -238,7 +239,7 @@ To ensure deterministic privileges regardless of prior environment state, all ta
 | `public.patients` | *None* | `SELECT`, `INSERT`, `UPDATE (age_value, age_unit, date_of_birth, gender, blood_group, emergency_phone, medical_notes)` | `id`, `created_at`, `updated_at` explicitly revoked at column level; RLS blocks non-patients | `set_updated_at()` |
 | `public.doctors` | *None* | `SELECT`, `UPDATE (qualification, experience_years, consultation_fee, languages, bio, clinic_name, clinic_address, is_active)` | `INSERT` revoked (RPC-only); `is_approved`, `rating`, `review_count`, `id`, `updated_at` explicitly revoked at column level | `protect_doctor_fields()` |
 | `public.doctor_verifications` | *None* | `SELECT` | `INSERT`, `UPDATE`, `DELETE` revoked at table AND column levels (status changes via Part 5 RPC) | `set_updated_at()` & `sync_doctor_approval()` |
-| `public.doctor_documents` | *None* | `SELECT`, `INSERT`, `DELETE` | `UPDATE` revoked (immutable metadata); RLS blocks non-doctors | N/A (immutable) |
+| `public.doctor_documents` | *None* | `SELECT`, `DELETE` | `INSERT` revoked (RPC-only); `UPDATE` revoked (immutable metadata); RLS restricts to owning doctor/applicant | N/A (immutable) |
 | `public.doctor_schedules` | *None* | `SELECT`, `INSERT`, `UPDATE`, `DELETE` | RLS blocks non-doctors | N/A |
 | `public.doctor_leaves` | *None* | `SELECT`, `INSERT`, `UPDATE`, `DELETE` | RLS blocks non-doctors | N/A |
 | `public.appointments` | *None* | `SELECT` | `INSERT`, `UPDATE`, `DELETE` revoked at table and column levels (RPC-only) | Maintained in Part 4 RPCs |

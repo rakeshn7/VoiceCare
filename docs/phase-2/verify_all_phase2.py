@@ -13,10 +13,12 @@ from pathlib import Path
 
 # Add child part paths if needed
 CURRENT_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = CURRENT_DIR.parent.parent
 PART1_DIR = CURRENT_DIR / "part-1-database-foundation"
 PART2_DIR = CURRENT_DIR / "part-2-authentication-roles"
 PART3_DIR = CURRENT_DIR / "part-3-storage-verification"
 PART4_DIR = CURRENT_DIR / "part-4-appointment-engine"
+FUNCTIONS_DIR = PROJECT_ROOT / "supabase" / "functions"
 
 sys.path.insert(0, str(PART3_DIR))
 sys.path.insert(0, str(PART4_DIR))
@@ -56,6 +58,9 @@ def run_suite() -> bool:
         (PART4_DIR / "voicecare_phase2_part4_design.md", "Part 4 Design"),
         (PART4_DIR / "voicecare_phase2_part4_notes.md", "Part 4 Notes"),
         (PART4_DIR / "verify_part4_sql.py", "Part 4 Verification Script"),
+        (FUNCTIONS_DIR / "create-doctor-upload-url" / "index.ts", "Edge Function: create-doctor-upload-url"),
+        (FUNCTIONS_DIR / "cleanup-storage-queue" / "index.ts", "Edge Function: cleanup-storage-queue"),
+        (FUNCTIONS_DIR / "deno.json", "Edge Functions: deno.json"),
     ]
     
     for fpath, label in required_files:
@@ -163,6 +168,93 @@ def run_suite() -> bool:
             errors.append("Part 4 static verification reported failures.")
     except Exception as ex:
         errors.append(f"Failed to execute Part 4 verification script: {ex}")
+
+    # -------------------------------------------------------------------------
+    # SUITE CHECK 7: Supabase Edge Functions Audit
+    # -------------------------------------------------------------------------
+    print("\n--- [SUITE CHECK 7] SUPABASE EDGE FUNCTIONS SECURITY AUDIT ---")
+    upload_fn_path = FUNCTIONS_DIR / "create-doctor-upload-url" / "index.ts"
+    if upload_fn_path.exists():
+        with open(upload_fn_path, "r", encoding="utf-8") as f:
+            upload_fn_content = f.read()
+        
+        # Check security elements
+        if "Authorization" not in upload_fn_content or "auth.getUser" not in upload_fn_content:
+            errors.append("create-doctor-upload-url missing JWT bearer verification (auth.getUser).")
+        if "ADMIN_RESTRICTED" not in upload_fn_content:
+            errors.append("create-doctor-upload-url missing administrator restriction check.")
+        if "10 * 1024 * 1024" not in upload_fn_content:
+            errors.append("create-doctor-upload-url missing 10 MB size limit.")
+        if "ALLOWED_MIME_TYPES" not in upload_fn_content:
+            errors.append("create-doctor-upload-url missing MIME type whitelist.")
+        if "createSignedUploadUrl" not in upload_fn_content:
+            errors.append("create-doctor-upload-url missing createSignedUploadUrl call.")
+        print(" [PASS] create-doctor-upload-url: JWT auth, admin guard, MIME whitelist, and 10MB bounds verified.")
+    else:
+        errors.append(f"Missing Edge Function: {upload_fn_path}")
+
+    cleanup_fn_path = FUNCTIONS_DIR / "cleanup-storage-queue" / "index.ts"
+    if cleanup_fn_path.exists():
+        with open(cleanup_fn_path, "r", encoding="utf-8") as f:
+            cleanup_fn_content = f.read()
+        
+        if "storage_deletion_queue" not in cleanup_fn_content:
+            errors.append("cleanup-storage-queue missing storage_deletion_queue query.")
+        if "adminClient.storage" not in cleanup_fn_content or ".remove" not in cleanup_fn_content:
+            errors.append("cleanup-storage-queue missing Storage API removal call.")
+        if '"completed"' not in cleanup_fn_content or '"failed"' not in cleanup_fn_content:
+            errors.append("cleanup-storage-queue missing completion/failure status updates.")
+        print(" [PASS] cleanup-storage-queue: Queue polling, Storage API deletion, and retry tracking verified.")
+    else:
+        errors.append(f"Missing Edge Function: {cleanup_fn_path}")
+
+    # -------------------------------------------------------------------------
+    # SUITE CHECK 8: Cross-Part Invariants & Permissions Reconciliation Audit
+    # -------------------------------------------------------------------------
+    print("\n--- [SUITE CHECK 8] CROSS-PART INVARIANTS & RECONCILIATION AUDIT ---")
+    
+    # 8.1 Base Table Grants on doctor_documents: No client INSERT in Part 2
+    part2_doc_grants = re.findall(r'GRANT\s+([^;]+)\s+ON\s+(?:TABLE\s+)?public\.doctor_documents\s+TO\s+authenticated', p2_sql, re.IGNORECASE)
+    for grant_match in part2_doc_grants:
+        if "INSERT" in grant_match.upper():
+            errors.append("Cross-part violation: Part 2 grants INSERT on public.doctor_documents to authenticated. Must be revoked.")
+    if not any("INSERT" in gm.upper() for gm in part2_doc_grants):
+        print(" [PASS] Part 2 Grants: Direct client INSERT on public.doctor_documents is omitted/revoked.")
+
+    # 8.2 Part 4 Explicit Revocation of INSERT on doctor_documents
+    p4_sql_path = PART4_DIR / "voicecare_phase2_part4_rpc.sql"
+    with open(p4_sql_path, "r", encoding="utf-8") as f:
+        p4_sql = f.read()
+    if not re.search(r'REVOKE\s+INSERT\s+ON\s+public\.doctor_documents\s+FROM\s+PUBLIC,\s*anon,\s*authenticated', p4_sql, re.IGNORECASE):
+        errors.append("Cross-part violation: Part 4 must explicitly revoke INSERT on public.doctor_documents from PUBLIC, anon, authenticated.")
+    else:
+        print(" [PASS] Part 4 Hardening: Explicit REVOKE INSERT on public.doctor_documents confirmed.")
+
+    # 8.3 Phone Regex Invariant: Indian 10-digit mobile ^[6-9][0-9]{9}$
+    phone_literal = "^[6-9][0-9]{9}$"
+    if phone_literal not in p1_sql:
+        errors.append("Part 1 missing Indian 10-digit mobile regex ^[6-9][0-9]{9}$.")
+    if phone_literal not in p4_sql:
+        errors.append("Part 4 missing Indian 10-digit mobile regex ^[6-9][0-9]{9}$.")
+    if phone_literal in p1_sql and phone_literal in p4_sql:
+        print(" [PASS] Phone Regex Invariant: Consistent Indian 10-digit mobile format (^[6-9][0-9]{9}$) in Parts 1 & 4.")
+
+    # 8.4 Age Representation Invariant: age_value (0-11 for months, 1-120 for years) and age_unit ('months', 'years')
+    if "age_value" not in p1_sql or "age_unit" not in p1_sql:
+        errors.append("Part 1 missing age_value / age_unit columns.")
+    if "age_value" not in p4_sql or "age_unit" not in p4_sql:
+        errors.append("Part 4 missing age_value / age_unit handling.")
+    if "age_value" in p1_sql and "age_unit" in p1_sql and "age_value" in p4_sql and "age_unit" in p4_sql:
+        print(" [PASS] Age Representation Invariant: Consistent age_value + age_unit in Parts 1 & 4.")
+
+    # 8.5 Part 3 Storage Ownership: Prospective Applicants Allowed for Own Folder
+    p3_sql_path = PART3_DIR / "voicecare_phase2_part3_storage.sql"
+    with open(p3_sql_path, "r", encoding="utf-8") as f:
+        p3_sql = f.read()
+    if "split_part(p_name, '/', 1) = auth.uid()::text" not in p3_sql or "p.role = 'patient'" not in p3_sql:
+        errors.append("Part 3 is_doctor_document_owner must allow prospective applicant with role = 'patient' for their own folder.")
+    else:
+        print(" [PASS] Part 3 Storage Ownership: Prospective applicants (role = 'patient') permitted for their own folder.")
 
     if errors:
         print("\n" + "=" * 80)

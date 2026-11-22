@@ -381,10 +381,10 @@ COMMENT ON FUNCTION public.validate_doctor_document_metadata(jsonb)
 -- 2.3  is_doctor_document_owner(object_name text)
 --      Multi-factor ownership verification:
 --        1. Calling user is authenticated (auth.uid() IS NOT NULL).
---        2. Calling user has public.profiles.role = 'doctor' (via public.is_doctor()).
---        3. Path conforms to strict path rules (via public.validate_doctor_document_path).
---        4. Doctor UUID segment of path strictly matches auth.uid()::text.
---        5. Calling user exists in the public.doctors relational table.
+--        2. Path conforms to strict path rules (via public.validate_doctor_document_path).
+--        3. Doctor/Applicant UUID segment of path strictly matches auth.uid()::text.
+--        4. Calling user exists in the system as an approved doctor, an applicant
+--           with a pending doctor profile, or an authenticated prospective applicant.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.is_doctor_document_owner(p_name text)
 RETURNS BOOLEAN
@@ -395,19 +395,30 @@ SET search_path = pg_catalog
 AS $$
     SELECT
         auth.uid() IS NOT NULL
-        AND public.is_doctor()
         AND public.validate_doctor_document_path(p_name)
         AND split_part(p_name, '/', 1) = auth.uid()::text
-        AND EXISTS (
-            SELECT 1
-            FROM   public.doctors d
-            WHERE  d.id = auth.uid()
+        AND (
+            -- Case 1: Approved doctor
+            public.is_doctor()
+            -- Case 2: Applicant with pending application in public.doctors
+            OR EXISTS (
+                SELECT 1
+                FROM   public.doctors d
+                WHERE  d.id = auth.uid()
+            )
+            -- Case 3: Authenticated prospective applicant onboarding before approval
+            OR EXISTS (
+                SELECT 1
+                FROM   public.profiles p
+                WHERE  p.id = auth.uid()
+                  AND  p.role = 'patient'::public.user_role
+            )
         );
 $$;
 
 ALTER FUNCTION public.is_doctor_document_owner(text) OWNER TO postgres;
 COMMENT ON FUNCTION public.is_doctor_document_owner(text)
-    IS 'Returns true only if caller is a registered doctor whose auth.uid() matches the validated path prefix';
+    IS 'Returns true only if caller is a registered doctor or prospective applicant whose auth.uid() matches the validated path prefix';
 
 
 -- =============================================================================

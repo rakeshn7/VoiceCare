@@ -21,7 +21,7 @@ Under Indian digital health guidelines—specifically the National Digital Healt
 
 | Threat Vector | Attack Scenario | Naive Storage Policy Behavior | Part 3 Mitigation Mechanism |
 | :--- | :--- | :--- | :--- |
-| **T1: Path Spoofing by Patients** | A malicious user with role `patient` creates folder `{patient_uuid}/fake_license.pdf` and uploads files to `doctor-docs`. | **VULNERABLE:** Naive policies check only `(storage.foldername(name))[1] = auth.uid()::text`, allowing any authenticated user to upload. | **MITIGATED:** `public.is_doctor_document_owner(name)` strictly checks `public.is_doctor()` AND `EXISTS (SELECT 1 FROM public.doctors WHERE id = auth.uid())`. Patients are rejected immediately. |
+| **T1: Cross-User Path Spoofing & Applicant Isolation** | A malicious user attempts to create a folder belonging to another user or doctor: `{victim_uuid}/fake_license.pdf`. | **VULNERABLE:** Naive policies allow arbitrary bucket writes or check only unvalidated prefixes. | **MITIGATED:** `public.is_doctor_document_owner(name)` strictly checks that the path prefix matches `auth.uid()::text`. Prospective doctor applicants (`role = 'patient'`) are permitted to upload credentials only to their own `{auth.uid()}/...` folder. Cross-user path tampering is rejected immediately. |
 | **T2: Cross-Doctor Path Tampering** | Doctor A attempts to upload into or overwrite Doctor B's folder: `{doctor_b_uuid}/tampered_license.pdf`. | **VULNERABLE:** If path prefix is not verified against `auth.uid()`, Doctor A overwrites Doctor B's credentials. | **MITIGATED:** `split_part(name, '/', 1) = auth.uid()::text` is enforced in all policies. Doctor A cannot read, upload, modify, or delete Doctor B's files. |
 | **T3: Path Traversal & Subdirectory Injection** | Attacker uploads with paths containing `../` or nested folders (e.g. `{doctor_uuid}/../../other_bucket/file.pdf`). | **VULNERABLE:** Path manipulation can escape the folder or pollute other namespaces. | **MITIGATED:** `public.validate_doctor_document_path(name)` enforces single-level structure (exactly one `/`), UUID regex, filename regex `^[a-zA-Z0-9_\-][a-zA-Z0-9_\-\.]{0,253}[a-zA-Z0-9]$`, and explicitly rejects `..`, `//`, and `\`. |
 | **T4: Storage Exhaustion / Denial of Service** | Malicious actor uploads multi-gigabyte video or binary files to exhaust cloud storage quotas and inflate billing. | **VULNERABLE:** If file size is unconstrained, storage fills up rapidly. | **MITIGATED:** Storage bucket config (`file_size_limit = 10485760`) and RLS policy constraint pre-checked with regex before casting enforce a 10 MB maximum per file. |
@@ -68,11 +68,12 @@ To maintain ACID transactional boundaries in PostgreSQL while respecting Storage
        └─► If Network Error / 5xx: UPDATE storage_deletion_queue SET attempts=attempts+1, last_error=...
 ```
 
-**Worker Contract (Operational Phase Implementation):**
+**Worker Contract & Edge Function Implementation:**
 - The database queue (`public.storage_deletion_queue`) and the enqueue trigger are provisioned in Part 3.
-- The consumer worker (implemented in later operational deployment phases via a scheduled Supabase Edge Function or database webhook) reads batches of pending tasks (`status = 'pending' LIMIT 50 FOR UPDATE SKIP LOCKED`).
-- Idempotency is guaranteed: if the file was already deleted or does not exist, a 404 response is treated as successful completion.
-- Failures are retried up to 5 times before being flagged as `failed` for administrator notification.
+- The asynchronous worker is implemented as a production-ready Supabase Edge Function (`supabase/functions/cleanup-storage-queue/index.ts`).
+- It polls pending tasks (`status = 'pending' LIMIT 50`), deletes each physical file via the Supabase Storage REST API (`storage.from('doctor-docs').remove([storage_path])`), and marks the item `completed`.
+- Idempotency is guaranteed: if the file was already deleted or does not exist (HTTP 404), it is treated as successfully completed.
+- Failures are retried up to 5 times before being flagged as `failed` with captured error diagnostics.
 
 ---
 
@@ -146,13 +147,13 @@ The following matrix documents the exact contract across Part 1 (Foundation Sche
 | Dimension | Part 1: Database Foundation | Part 2: Auth & Roles | Part 3: Supabase Storage |
 | :--- | :--- | :--- | :--- |
 | **Object Name / Path** | `public.doctor_documents.storage_path` | Verified in Part 2 RLS for documents | `storage.objects.name` in `doctor-docs` |
-| **Path Structure** | `LIKE (doctor_id::text || '/%') AND NOT LIKE '%/'` | Enforced in metadata insert policies | Exactly `{doctor_uuid}/{filename.ext}` (1 slash, UUID format) |
-| **Role Verification** | Foreign key to `public.doctors(id)` | `public.is_doctor()`, `public.is_admin()`, `public.is_patient()` | Uses `public.is_doctor()` and `public.is_admin()` |
-| **Doctor Metadata Table** | `public.doctor_documents` | `GRANT SELECT, INSERT, DELETE` to `authenticated` | Enqueues cleanup in `public.storage_deletion_queue` on DELETE |
+| **Path Structure** | `LIKE (doctor_id::text || '/%') AND NOT LIKE '%/'` | Enforced in metadata constraints & RPCs | Exactly `{doctor_uuid}/{filename.ext}` (1 slash, UUID format) |
+| **Role Verification** | Foreign key to `public.doctors(id)` | `public.is_doctor()`, `public.is_admin()`, `public.is_patient()` | Uses `public.is_doctor_document_owner(name)` & `public.is_admin()` |
+| **Doctor Metadata Table** | `public.doctor_documents` | `GRANT SELECT, DELETE` to `authenticated` (direct `INSERT` revoked) | Enqueues cleanup in `public.storage_deletion_queue` on DELETE |
 | **File Types Allowed** | `document_type IN ('medical_license', 'degree_certificate', 'identity_proof', 'other')` | Document metadata protected by RLS | Extensions: `pdf, png, jpg, jpeg, webp`; MIME: `application/pdf, image/*` |
 | **File Size Limit** | Unconstrained in relational schema | N/A | Strictly $>0$ and $\le 10$ MB (10,485,760 bytes) |
 | **Access Boundaries** | Base table constraints | Table-level and column-level REVOKE / GRANT | Bucket `public = false`; RLS on `storage.objects` |
-| **Patients Access** | Blocked from `doctor_documents` | Blocked by RLS & privilege grants | Blocked completely from `doctor-docs` bucket |
+| **Patients & Applicants** | Blocked from others' documents | Blocked from others; applicants can view own | Prospective applicants can upload to own `{auth.uid()}/...` folder; blocked from all others |
 | **Admins Access** | Full visibility | Full visibility via `public.is_admin()` | Full read and management access to all files |
 
 ---
@@ -161,14 +162,22 @@ The following matrix documents the exact contract across Part 1 (Foundation Sche
 
 When deploying VoiceCare to production, the following infrastructure measures should be implemented alongside Part 3 SQL:
 
-1. **Asynchronous Malware & Antivirus Scanning:**
+1. **Edge Function for Presigned Uploads (`create-doctor-upload-url`):**
+   - Implemented in `supabase/functions/create-doctor-upload-url/index.ts`.
+   - Allows prospective doctor applicants (`role = 'patient'`) or verified doctors to request short-lived presigned upload URLs scoped strictly to their own `{auth.uid()}/{filename.ext}` path.
+   - Validates file MIME types, extensions, size constraints (≤ 10 MB), and prohibits administrator account misuse.
+2. **Edge Function for Asynchronous Storage Deletion (`cleanup-storage-queue`):**
+   - Implemented in `supabase/functions/cleanup-storage-queue/index.ts`.
+   - Safely removes physical files via the official Supabase Storage API upon database metadata deletion.
+   - Handles retries (up to 5 attempts) and gracefully handles HTTP 404 (already deleted) responses idempotently.
+3. **Asynchronous Malware & Antivirus Scanning:**
    - While MIME and extension checks stop accidental wrong formats, they do not inspect binary payloads for embedded exploits.
    - Recommended architecture: A Supabase Storage Webhook or Google Cloud Function listens to `storage.objects` `INSERT` events, runs ClamAV or VirusTotal API scanning, and if infected, purges the object and alerts administrators.
-2. **Safe Content-Disposition Headers:**
+4. **Safe Content-Disposition Headers:**
    - Configure Supabase Storage to serve credentials with `Content-Disposition: inline` for PDFs and images, but ensure strict `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'` when serving documents to prevent stored XSS attacks if HTML were somehow served.
-3. **Audit Logging for Document Access:**
+5. **Audit Logging for Document Access:**
    - Supabase Enterprise / PostgreSQL logging records all `SELECT` queries on `storage.objects`. In production, enable pgaudit on `storage.objects` to record who accessed which doctor's credentials and when, fulfilling ABDM compliance audit requirements.
-4. **Data Retention on Rejected Applications:**
+6. **Data Retention on Rejected Applications:**
    - In Part 5, when an admin permanently rejects an application, an administrative retention rule can be applied (e.g. retain for 90 days for appeal, then cascade delete doctor metadata, which automatically triggers `trg_doctor_documents_storage_cleanup` to enqueue physical files for destruction).
 
 ---

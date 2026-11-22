@@ -554,7 +554,7 @@ CREATE POLICY "doctors: select approved active or own or admin"
     ON public.doctors FOR SELECT TO authenticated
     USING (
         (is_approved = true AND is_active = true)
-        OR (id = auth.uid() AND public.is_doctor())
+        OR id = auth.uid()
         OR public.is_admin()
     );
 
@@ -574,10 +574,11 @@ CREATE POLICY "doctors: update own or admin"
 --      Direct client INSERT is revoked (managed via Part 4 RPC).
 --      Direct client UPDATE is revoked from clients.
 --      Part 5 must update status via a trusted server-side SECURITY DEFINER RPC.
+--      Applicants can inspect their own verification status; admins inspect all.
 -- ---------------------------------------------------------------------------
 CREATE POLICY "verifications: select own or admin"
     ON public.doctor_verifications FOR SELECT TO authenticated
-    USING ((doctor_id = auth.uid() AND public.is_doctor()) OR public.is_admin());
+    USING (doctor_id = auth.uid() OR public.is_admin());
 
 CREATE POLICY "verifications: admin insert"
     ON public.doctor_verifications FOR INSERT TO authenticated
@@ -591,27 +592,20 @@ CREATE POLICY "verifications: update admin only"
 
 -- ---------------------------------------------------------------------------
 -- 5.5  public.doctor_documents policies
---      Credential metadata: Doctors can manage their own document metadata.
---      Administrators can inspect, insert, and delete document metadata for any doctor.
---      Patients are strictly blocked from all document operations.
+--      Credential metadata: Doctors and applicants can view and delete their own
+--      document metadata. Administrators can inspect and delete for any doctor.
+--      Direct client INSERT is strictly REVOKED: all document metadata creation
+--      must route through authorized SECURITY DEFINER RPCs (submit_doctor_application
+--      and register_doctor_document) to enforce doctor row locks and quotas.
+--      Direct client UPDATE is revoked (documents are immutable records).
 -- ---------------------------------------------------------------------------
 CREATE POLICY "documents: select own or admin"
     ON public.doctor_documents FOR SELECT TO authenticated
-    USING ((doctor_id = auth.uid() AND public.is_doctor()) OR public.is_admin());
+    USING (doctor_id = auth.uid() OR public.is_admin());
 
-CREATE POLICY "documents: insert doctor or admin"
-    ON public.doctor_documents FOR INSERT TO authenticated
-    WITH CHECK (
-        (doctor_id = auth.uid() AND public.is_doctor())
-        OR public.is_admin()
-    );
-
-CREATE POLICY "documents: delete doctor or admin"
+CREATE POLICY "documents: delete own or admin"
     ON public.doctor_documents FOR DELETE TO authenticated
-    USING (
-        (doctor_id = auth.uid() AND public.is_doctor())
-        OR public.is_admin()
-    );
+    USING (doctor_id = auth.uid() OR public.is_admin());
 
 
 -- ---------------------------------------------------------------------------
@@ -794,8 +788,10 @@ GRANT UPDATE (
 -- Part 5 must update status via a trusted server-side SECURITY DEFINER RPC.
 GRANT SELECT ON public.doctor_verifications TO authenticated;
 
--- doctor_documents: SELECT, INSERT, DELETE granted; UPDATE revoked (immutable records)
-GRANT SELECT, INSERT, DELETE ON public.doctor_documents TO authenticated;
+-- doctor_documents: SELECT, DELETE granted; direct client INSERT and UPDATE revoked.
+-- All document metadata creation is strictly routed through authorized SECURITY DEFINER RPCs
+-- (submit_doctor_application and register_doctor_document) to enforce doctor row locks and quotas.
+GRANT SELECT, DELETE ON public.doctor_documents TO authenticated;
 
 -- doctor_schedules: full management granted; RLS restricts to own doctor or admin
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.doctor_schedules TO authenticated;

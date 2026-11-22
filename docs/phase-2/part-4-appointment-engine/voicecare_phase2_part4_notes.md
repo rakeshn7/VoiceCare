@@ -107,8 +107,7 @@ A critical architectural decision in Part 4 is that `submit_doctor_application` 
 - In Part 2, `protect_profile_role` was implemented as a security trigger preventing any non-admin from modifying `profiles.role`.
 - If an unverified applicant were immediately granted `role = 'doctor'`, they would gain the capability to create schedule records, declare leaves, and upload documents under doctor-specific RLS policies before any administrative review.
 - Part 4 strictly provisions `public.doctors (is_approved = false)` and `public.doctor_verifications (status = 'pending')`. The applicant remains `role = 'patient'`. Promotion to `doctor` is reserved strictly for Part 5, where an administrator executes an audited verification decision RPC.
-- **Part 3 Storage RLS Dependency:** Because the applicant remains `role = 'patient'`, client SDK uploads to the private `doctor-docs` storage bucket will be blocked by Part 3 Storage RLS policy `"doctor_docs: insert own or admin"`.
-- **Architectural Solution:** As documented in Part 3 Section 8.1, the upload sequence requires a trusted server endpoint (e.g. Supabase Edge Function using the Service Role key) that authenticates the applicant's JWT and issues a **Presigned Upload URL** (`createSignedUploadUrl`) scoped strictly to `{doctor_uuid}/{filename.ext}`. The applicant uploads the binary file via the presigned URL, and then calls `submit_doctor_application` or `register_doctor_document` (`SECURITY DEFINER`) to register the metadata in `public.doctor_documents`.
+- **Part 3 Storage RLS & Upload Support:** In Part 3, `public.is_doctor_document_owner(name)` was specifically updated to permit prospective applicants (`role = 'patient'`) to upload files directly into their own `{auth.uid()}/...` folder in the private `doctor-docs` bucket. Additionally, an Edge Function (`create-doctor-upload-url` in `supabase/functions/create-doctor-upload-url/index.ts`) provides presigned upload URLs as an alternate upload path. After the binary file lands in storage, the applicant calls `submit_doctor_application` or `register_doctor_document` (`SECURITY DEFINER`) to register metadata in `public.doctor_documents`.
 
 ### 1.6 Mandatory Doctor Rejection Reason
 When declining an appointment via `doctor_respond_appointment(p_decision = 'rejected')`:
@@ -146,7 +145,7 @@ In Part 2, `GRANT SELECT, INSERT, DELETE ON public.doctor_documents TO authentic
   - Direct client `SELECT` (inspecting own metadata) and `DELETE` (deleting own document metadata) granted in Part 2 are preserved.
   - Direct client `UPDATE` remains revoked as established in Part 2.
   - All document creation paths are strictly forced through the trusted RPCs, ensuring parent doctor-row locking and strict adherence to the 25-document quota.
-  - **Part 2 Dependency:** In Part 7 integrated deployment, Part 2's direct `INSERT` grant on `public.doctor_documents` should be omitted or cleanly superseded by Part 4's revocation.
+  - **Part 2 Reconciled Baseline:** In Part 2 (`voicecare_part2_auth.sql`), direct client `INSERT` is omitted from table grants (`GRANT SELECT, DELETE ON public.doctor_documents TO authenticated;`) and client `INSERT` policies have been removed. Part 4 Section 5.4 provides redundant defense-in-depth enforcement (`REVOKE INSERT ON public.doctor_documents FROM PUBLIC, anon, authenticated;`).
 
 ---
 

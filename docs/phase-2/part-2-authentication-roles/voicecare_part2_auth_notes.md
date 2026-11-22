@@ -81,26 +81,19 @@
 
 ---
 
-### 1.5 Resolving Doctor-Document Administrator Policy Ambiguity
-* **Ambiguity:** An earlier policy condition `doctor_id = auth.uid() AND (public.is_doctor() OR public.is_admin())` inadvertently prevented administrators from inserting or deleting document metadata on behalf of another doctor (because `doctor_id = auth.uid()` forced the document to belong to the admin, not the doctor).
-* **Resolution:**
-  - Modified the RLS condition to permit an administrator while strictly preserving doctor self-ownership checks:
-    ```sql
-    CREATE POLICY "documents: insert doctor or admin"
-        ON public.doctor_documents FOR INSERT TO authenticated
-        WITH CHECK (
-            (doctor_id = auth.uid() AND public.is_doctor())
-            OR public.is_admin()
-        );
-
-    CREATE POLICY "documents: delete doctor or admin"
-        ON public.doctor_documents FOR DELETE TO authenticated
-        USING (
-            (doctor_id = auth.uid() AND public.is_doctor())
-            OR public.is_admin()
-        );
-    ```
-  - **Outcome:** A doctor can only manage documents for their own `doctor_id`. An administrator can manage documents across any doctor. Patients are completely blocked from document metadata operations.
+### 1.5 Revocation of Direct Client INSERT on Doctor Documents & Applicant Visibility
+* **Direct Client INSERT Revocation:**
+  - Direct client `INSERT` on `public.doctor_documents` is **completely revoked** from `authenticated`, `anon`, and `PUBLIC`.
+  - All document metadata creation is strictly channeled through authorized `SECURITY DEFINER` RPCs (`submit_doctor_application` and `register_doctor_document`) in Part 4, which enforce parent doctor row locks (`FOR UPDATE`), 25-document quota limits, and path structure validation.
+  - The legacy client INSERT policy (`documents: insert doctor or admin`) is permanently removed.
+* **Applicant Visibility Alignment:**
+  - Prospective doctor applicants initially hold `role = 'patient'` until approved by administrators in Part 5.
+  - Earlier policies requiring `public.is_doctor()` inadvertently locked out pending applicants from viewing their own submitted profile, verification record, and document metadata.
+  - RLS policies on `public.doctors`, `public.doctor_verifications`, and `public.doctor_documents` are updated to allow self-inspection via `id = auth.uid()` or `doctor_id = auth.uid()`, ensuring both pending applicants and approved doctors can view their own status while blocking other patients.
+* **Outcome:**
+  - `public.doctor_documents` permits only `SELECT` and `DELETE` for authenticated users (scoped to own document or admin).
+  - Client `INSERT` is impossible via direct PostgREST, preventing quota bypass.
+  - Pending applicants can inspect their verification queue entry and document metadata.
 
 ---
 
@@ -139,14 +132,14 @@ Every policy, function, view, and grant in Part 2 is strictly synchronized acros
 | `patients` | `patients: insert own` | INSERT | `authenticated` | `id = auth.uid() AND public.is_patient()` | `INSERT` |
 | `patients` | `patients: update own or admin` | UPDATE | `authenticated` | `(id = auth.uid() AND public.is_patient()) OR public.is_admin()` | `UPDATE (age_value, age_unit, date_of_birth, gender, blood_group, emergency_phone, medical_notes)` |
 | `doctors` | `doctors: select approved active or own or admin` | SELECT | `authenticated` | `(is_approved = true AND is_active = true) OR (id = auth.uid() AND public.is_doctor()) OR public.is_admin()` | `SELECT` |
+| `doctors` | `doctors: select approved active or own or admin` | SELECT | `authenticated` | `(is_approved = true AND is_active = true) OR id = auth.uid() OR public.is_admin()` | `SELECT` |
 | `doctors` | `doctors: admin insert` | INSERT | `authenticated` | `public.is_admin()` | *Client INSERT revoked (Part 4 RPC)* |
 | `doctors` | `doctors: update own or admin` | UPDATE | `authenticated` | `(id = auth.uid() AND public.is_doctor()) OR public.is_admin()` | `UPDATE (qualification, experience_years, consultation_fee, languages, bio, clinic_name, clinic_address, is_active)` |
-| `doctor_verifications` | `verifications: select own or admin` | SELECT | `authenticated` | `(doctor_id = auth.uid() AND public.is_doctor()) OR public.is_admin()` | `SELECT` |
+| `doctor_verifications` | `verifications: select own or admin` | SELECT | `authenticated` | `doctor_id = auth.uid() OR public.is_admin()` | `SELECT` |
 | `doctor_verifications` | `verifications: admin insert` | INSERT | `authenticated` | `public.is_admin()` | *Client INSERT revoked (Part 4 RPC)* |
 | `doctor_verifications` | `verifications: update admin only` | UPDATE | `authenticated` | `public.is_admin()` | *Client UPDATE revoked (Part 5 server-side RPC)* |
-| `doctor_documents` | `documents: select own or admin` | SELECT | `authenticated` | `(doctor_id = auth.uid() AND public.is_doctor()) OR public.is_admin()` | `SELECT` |
-| `doctor_documents` | `documents: insert doctor or admin` | INSERT | `authenticated` | `(doctor_id = auth.uid() AND public.is_doctor()) OR public.is_admin()` | `INSERT` |
-| `doctor_documents` | `documents: delete doctor or admin` | DELETE | `authenticated` | `(doctor_id = auth.uid() AND public.is_doctor()) OR public.is_admin()` | `DELETE` |
+| `doctor_documents` | `documents: select own or admin` | SELECT | `authenticated` | `doctor_id = auth.uid() OR public.is_admin()` | `SELECT` |
+| `doctor_documents` | `documents: delete own or admin` | DELETE | `authenticated` | `doctor_id = auth.uid() OR public.is_admin()` | `DELETE` *(Client INSERT revoked; Part 4 RPCs)* |
 | `doctor_schedules` | `schedules: select active approved or own or admin` | SELECT | `authenticated` | `(doctor_id = auth.uid() AND public.is_doctor()) OR public.is_admin() OR (is_active = true AND EXISTS (SELECT 1 FROM public.doctors d WHERE d.id = doctor_schedules.doctor_id AND d.is_approved = true AND d.is_active = true))` | `SELECT` |
 | `doctor_schedules` | `schedules: manage own doctor or admin` | ALL | `authenticated` | `(doctor_id = auth.uid() AND public.is_doctor()) OR public.is_admin()` | `SELECT, INSERT, UPDATE, DELETE` |
 | `doctor_leaves` | `leaves: select own or admin` | SELECT | `authenticated` | `(doctor_id = auth.uid() AND public.is_doctor()) OR public.is_admin()` | `SELECT` |

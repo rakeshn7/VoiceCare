@@ -71,8 +71,8 @@ docs/phase-2/
 - **Purpose:** Defines the relational tables, data types, check constraints, and performance indexes underpinning the application.
 - **Key Schemas:** `public.profiles`, `public.patients`, `public.doctors`, `public.doctor_verifications`, `public.doctor_documents`, `public.doctor_schedules`, `public.doctor_leaves`, `public.appointments`, and `public.in_app_reminders`.
 - **Specialized Constraints:**
-  - Phone numbers strictly validated to E.164 standard (`^\+[1-9]\d{1,14}$`).
-  - Pediatric & geriatric age representations (`age_years` 0–130, `age_unit` in `years`, `months`, `days`).
+  - Phone numbers strictly validated to Indian 10-digit mobile format (`^[6-9][0-9]{9}$`).
+  - Pediatric & geriatric age representations (`age_value` 0–11 for `'months'`, 1–120 for `'years'`; `age_unit` in `'months'`, `'years'`).
   - Consultation fees capped at a realistic boundary of ₹50,000 INR (`chk_doctors_fee`).
   - Strict length limits on medical qualifications (≤ 255 chars) and clinic names (≤ 255 chars).
 
@@ -146,18 +146,21 @@ All artifacts in this repository have passed rigorous **static verification**:
 
 ## 6. Known Cross-Part Dependencies & Reconciliation Notes
 
-During the Phase 2 audit, the following cross-part interactions were identified and documented:
+During the Phase 2 audit, the following cross-part interactions were identified, analyzed, and fully reconciled across Parts 1–4:
 
-1. **Direct PostgREST Table `INSERT` Revocation:**
-   - *Part 2 Base Grant:* In `voicecare_part2_auth.sql`, `INSERT ON public.doctor_documents` was initially granted to `authenticated` with an RLS policy.
-   - *Part 4 Hardening:* In `voicecare_phase2_part4_rpc.sql` Section 5.4, direct client `INSERT` is explicitly revoked (`REVOKE INSERT ON public.doctor_documents FROM PUBLIC, anon, authenticated;`).
-   - *Rationale:* All document creation must pass through `submit_doctor_application` or `register_doctor_document` to acquire the parent doctor row lock (`FOR UPDATE`) and enforce the 25-document quota. Direct `SELECT` and `DELETE` remain active for clients.
-   - *Action for Integrated Migration:* Part 2's base table grants will be updated in the final Part 7 script to omit client `INSERT` on `doctor_documents`.
+1. **Direct PostgREST Table `INSERT` Revocation on `doctor_documents`:**
+   - *Part 2 Reconciled Baseline:* In `voicecare_part2_auth.sql`, `INSERT ON public.doctor_documents` is omitted from table grants (`GRANT SELECT, DELETE ON public.doctor_documents TO authenticated;`), and client `INSERT` RLS policies were removed.
+   - *Part 4 Hardening:* In `voicecare_phase2_part4_rpc.sql` Section 5.4, direct client `INSERT` is redundantly revoked (`REVOKE INSERT ON public.doctor_documents FROM PUBLIC, anon, authenticated;`).
+   - *Rationale:* All document creation must pass through `submit_doctor_application` or `register_doctor_document` to acquire the parent doctor row lock (`FOR UPDATE`) and enforce the 25-document quota. Direct `SELECT` and `DELETE` remain active for clients to view and delete their own files.
 
 2. **Storage Upload for Prospective Doctor Applicants:**
-   - In Part 3, direct uploads to `storage.objects` require the caller to possess the role `'doctor'`.
-   - Prospective doctor applicants initially hold the role `'patient'` until approved by an administrator in Part 5.
-   - Therefore, initial verification documents submitted during onboarding must be uploaded via backend presigned upload URLs (generated using the `service_role` key in an edge function) before invoking `submit_doctor_application()`.
+   - In Part 3, `public.is_doctor_document_owner(name)` was reconciled to permit authenticated prospective doctor applicants (`role = 'patient'`) to upload verification files to their own personal folder `{auth.uid()}/...` in `doctor-docs`.
+   - Furthermore, an Edge Function (`supabase/functions/create-doctor-upload-url/index.ts`) is provided to issue presigned upload URLs with MIME/extension/size verification.
+   - Once binary files land in storage, applicants call `submit_doctor_application()` or `register_doctor_document()`, keeping the account unapproved until Part 5 admin review.
+
+3. **Asynchronous Storage Cleanup Worker:**
+   - In Part 3, deleting rows in `public.doctor_documents` enqueues items into `public.storage_deletion_queue` via database trigger.
+   - A dedicated Edge Function (`supabase/functions/cleanup-storage-queue/index.ts`) processes pending queue entries via the Supabase Storage REST API with retry handling and 404 idempotency, completely eliminating direct SQL deletions on internal `storage.objects`.
 
 ---
 

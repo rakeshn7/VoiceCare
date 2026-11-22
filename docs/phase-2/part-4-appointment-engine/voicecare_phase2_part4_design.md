@@ -168,16 +168,16 @@ sequenceDiagram
     DB-->>Doctor: profiles.role promoted to 'doctor' (is_approved = true)
 ```
 
-### 5.2 Part 3 Storage Policy Interaction & Presigned Upload URLs
-In Part 3, Supabase Storage RLS policy `"doctor_docs: insert own or admin"` checks `public.is_doctor_document_owner(name)`, which evaluates:
+### 5.2 Part 3 Storage Policy Interaction & Upload Flow
+In Part 3, Supabase Storage RLS policy `"doctor_docs: insert own or admin"` checks `public.is_doctor_document_owner(name)`, which allows authenticated users to upload files provided:
 ```sql
-public.is_doctor() AND (split_part(name, '/', 1) = (SELECT auth.uid())::text)
+split_part(name, '/', 1) = auth.uid()::text
+AND (is_doctor OR has_doctor_record OR role = 'patient')
 ```
-Because prospective applicants hold `role = 'patient'`, direct browser uploads to `doctor-docs` using client anon/authenticated JWTs will be rejected by RLS.
-- **Architectural Solution (Documented Dependency):** As established in Part 3 Section 8.1, document upload during onboarding is handled via a trusted server endpoint (e.g. Supabase Edge Function) that uses the Service Role key to generate a **Presigned Upload URL** (`createSignedUploadUrl`) strictly bounded to `{doctor_uuid}/{filename.ext}`.
-- The applicant uploads the binary file via the presigned URL directly to Storage.
-- The applicant then calls `submit_doctor_application` (or `register_doctor_document`), which executes as `SECURITY DEFINER` and registers the metadata in `public.doctor_documents`.
-- Once approved in Part 5, `profiles.role` becomes `'doctor'`, granting the user direct access to Part 3 doctor-level storage operations.
+- **Prospective Applicant Upload:** Prospective applicants holding `role = 'patient'` can upload credential files directly to their personal folder `{auth.uid()}/...` in `doctor-docs`. Cross-user path tampering is strictly blocked by the folder ownership check.
+- **Edge Function Support (`create-doctor-upload-url`):** Alternatively, applicants can request a presigned upload URL via the `create-doctor-upload-url` Edge Function (`supabase/functions/create-doctor-upload-url/index.ts`), which validates file metadata and returns a time-limited signed upload URL.
+- **Atomic Metadata Registration:** Once files are uploaded to Storage, the applicant calls `submit_doctor_application` (or `register_doctor_document`), which executes as `SECURITY DEFINER` and records the metadata in `public.doctor_documents`.
+- **Approval Lifecycle:** Once approved by an administrator in Part 5, `profiles.role` is promoted to `'doctor'` and `doctors.is_approved` becomes `true`.
 
 ### 5.3 Concurrency-Safe Document Quota Enforcement
 In `register_doctor_document()`, checking document count without locking allows race conditions where concurrent requests exceed the 25-document limit. Part 4 enforces:

@@ -35,6 +35,15 @@ dist-ssr
 # TypeScript cache
 *.tsbuildinfo
 
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+
+# Local review duplicate copies
+/voicecare_phase2_part*
+
 # Environment variables & secrets
 .env
 .env.*

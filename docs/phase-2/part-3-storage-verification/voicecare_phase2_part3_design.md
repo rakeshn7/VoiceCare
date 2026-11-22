@@ -154,7 +154,8 @@ Access to objects in `storage.objects` for `bucket_id = 'doctor-docs'` is govern
 | Persona | Role (`public.profiles.role`) | SELECT (Download / View) | INSERT (Upload) | UPDATE (Upsert / Overwrite) | DELETE (Remove) |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Anonymous (`anon`)** | None | ❌ **DENIED** (Revoked) | ❌ **DENIED** (Revoked) | ❌ **DENIED** (Revoked) | ❌ **DENIED** (Revoked) |
-| **Patient (`authenticated`)** | `'patient'` | ❌ **DENIED** (RLS false) | ❌ **DENIED** (RLS false) | ❌ **DENIED** (RLS false) | ❌ **DENIED** (RLS false) |
+| **Unrelated Patient** | `'patient'` | ❌ **DENIED** (RLS false) | ❌ **DENIED** (RLS false) | ❌ **DENIED** (RLS false) | ❌ **DENIED** (RLS false) |
+| **Prospective Doctor Applicant** | `'patient'` (Applicant) | ✅ **ALLOWED** (Own folder only) | ✅ **ALLOWED** (Own folder only via RLS or Edge Function) | ✅ **ALLOWED** (Own folder only) | ✅ **ALLOWED** (Own folder only) |
 | **Doctor (`authenticated`)** | `'doctor'` | ✅ **ALLOWED** (Own files only) | ✅ **ALLOWED** (Own folder only) | ✅ **ALLOWED** (Own files only) | ✅ **ALLOWED** (Own files only) |
 | **Admin (`authenticated`)** | `'admin'` | ✅ **ALLOWED** (All doctor files) | ✅ **ALLOWED** (All doctor folders) | ✅ **ALLOWED** (All doctor files) | ✅ **ALLOWED** (All doctor files) |
 
@@ -172,9 +173,9 @@ CREATE POLICY "doctor_docs: select own or admin"
         )
     );
 ```
-- **Doctor Check:** `public.is_doctor_document_owner(name)` guarantees that the doctor is authenticated, possesses role `'doctor'`, exists in `public.doctors`, passes path validation, and `split_part(name, '/', 1) = auth.uid()::text`.
+- **Doctor & Applicant Check:** `public.is_doctor_document_owner(name)` guarantees that the caller is authenticated, passes path validation, and `split_part(name, '/', 1) = auth.uid()::text`. It permits approved doctors, applicants with pending applications, and prospective applicants managing their own credentials.
 - **Admin Check:** `public.is_admin()` allows administrators to review any document in the bucket.
-- **Patient Exclusion:** Evaluates to `false` unconditionally.
+- **Unrelated Patient Exclusion:** Evaluates to `false` unconditionally because `split_part(name, '/', 1) = auth.uid()::text` fails when user A queries user B's documents.
 
 #### 2. INSERT Policy: `"doctor_docs: insert own or admin"`
 ```sql
@@ -301,23 +302,34 @@ SET search_path = pg_catalog
 AS $$
     SELECT
         auth.uid() IS NOT NULL
-        AND public.is_doctor()
         AND public.validate_doctor_document_path(p_name)
         AND split_part(p_name, '/', 1) = auth.uid()::text
-        AND EXISTS (
-            SELECT 1
-            FROM   public.doctors d
-            WHERE  d.id = auth.uid()
+        AND (
+            -- Case 1: Approved doctor
+            public.is_doctor()
+            -- Case 2: Applicant with pending application in public.doctors
+            OR EXISTS (
+                SELECT 1
+                FROM   public.doctors d
+                WHERE  d.id = auth.uid()
+            )
+            -- Case 3: Authenticated prospective applicant onboarding before approval
+            OR EXISTS (
+                SELECT 1
+                FROM   public.profiles p
+                WHERE  p.id = auth.uid()
+                  AND  p.role = 'patient'::public.user_role
+            )
         );
 $$;
 ```
 
 This enforces five mandatory conditions simultaneously:
 1. **Identity Check:** Caller is authenticated (`auth.uid() IS NOT NULL`).
-2. **Profile Role Check:** Caller has `role = 'doctor'` in `public.profiles`.
-3. **Path Validation Check:** Path strictly conforms to `validate_doctor_document_path` (1 slash, valid UUID, safe filename, allowed extension).
-4. **Prefix Match:** The first directory component strictly matches `auth.uid()::text`.
-5. **Relational Table Presence:** Caller has an established record in `public.doctors`.
+2. **Path Validation Check:** Path strictly conforms to `validate_doctor_document_path` (1 slash, valid UUID, safe filename, allowed extension).
+3. **Prefix Match:** The first directory component strictly matches `auth.uid()::text`.
+4. **Relational Presence:** Caller exists in the system as an approved doctor, an applicant with a submitted application in `public.doctors`, or an authenticated prospective applicant.
+5. **Cross-User Isolation:** Because `split_part(p_name, '/', 1) = auth.uid()::text`, an applicant can never read, upload, or delete files in any other user's directory.
 
 If any condition fails, the function returns `false`.
 
