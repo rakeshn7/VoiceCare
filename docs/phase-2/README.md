@@ -21,10 +21,10 @@ This directory contains the database design artifacts, SQL migration specificati
   - **Part 3:** Supabase Storage and Doctor Verification Documents *(included)*
   - **Part 4:** Appointment Engine and Doctor Onboarding RPCs *(included)*
   - **Part 5:** Admin Review Dashboard & Verification Workflows *(included)*
-  - **Part 6:** Audit Logging, Telemetry & Compliance *(upcoming)*
-  - **Part 7:** Integrated End-to-End Migration & Verification *(upcoming)*
+  - **Part 6:** Audit Logging, Telemetry and Compliance *(included)*
+  - **Part 7:** Integrated End-to-End Migration and Verification *(upcoming)*
 
-This branch (`phase-2-review`) publishes **Parts 1 through 5** for architectural review and security auditing.
+This branch (`phase-2-review`) publishes **Parts 1 through 6** for architectural review and security auditing.
 
 ---
 
@@ -61,11 +61,17 @@ docs/phase-2/
     ├── voicecare_phase2_part4_notes.md          # Concurrency locking, quota, & error code specs
     └── verify_part4_sql.py                      # Comprehensive verification suite for Part 4 SQL
 │
-└── part-5-admin-review/
-    ├── voicecare_phase2_part5_admin_review.sql  # 4 administrative review, listing & stats RPCs
-    ├── voicecare_phase2_part5_design.md         # State machine, adjudication flow & UI design
-    ├── voicecare_phase2_part5_notes.md          # Concurrency row-locking, audit trails & RLS notes
-    └── verify_part5_sql.py                      # Static verification suite for Part 5 SQL
+├── part-5-admin-review/
+│   ├── voicecare_phase2_part5_admin_review.sql  # 4 administrative review, listing & stats RPCs
+│   ├── voicecare_phase2_part5_design.md         # State machine, adjudication flow & UI design
+│   ├── voicecare_phase2_part5_notes.md          # Concurrency row-locking, audit trails & RLS notes
+│   └── verify_part5_sql.py                      # Static verification suite for Part 5 SQL
+│
+└── part-6-audit-telemetry/
+    ├── voicecare_phase2_part6_audit.sql         # Append-only audit logs, telemetry & immutability triggers
+    ├── voicecare_phase2_part6_design.md         # Audit taxonomy, data minimization & compliance design
+    ├── voicecare_phase2_part6_notes.md          # Threat model, statutory vs policy analysis & RLS notes
+    └── verify_part6_sql.py                      # Static verification suite for Part 6 SQL
 ```
 
 ---
@@ -120,6 +126,17 @@ docs/phase-2/
   - **Secure Document Viewing:** Edge Function (`supabase/functions/create-doctor-document-view-url/index.ts`) verifies admin session, validates application document ownership, and issues 300-second presigned read URLs from the private `doctor-docs` bucket.
   - **React Admin Review Dashboard:** Full-featured, accessible UI with overview metric cards, searchable queue table, credential inspection modal, approval double-confirmation, and rejection reason input modal.
 
+### Part 6: Audit Logging, Telemetry and Compliance
+- **Location:** `docs/phase-2/part-6-audit-telemetry/`
+- **Purpose:** Implements an immutable, append-only audit trail and operational telemetry system with strict data minimization.
+- **Key Capabilities:**
+  - **Append-Only Immutability:** Engine-level `BEFORE UPDATE OR DELETE` triggers block tampering, modifications, or deletions on `public.audit_logs` and `public.operational_telemetry`.
+  - **Privacy-by-Design & Data Minimization:** Sanitization routine explicitly strips patient health information (`chief_complaint`, `symptoms`, `medical_notes`, `consultation_notes`) and sensitive credentials (`token`, `jwt`, `password`, `signed_url`) from audit metadata.
+  - **Automated Event Capture:** Database triggers automatically record application submission, approval, rejection, booking, cancellation, rescheduling, consultation closure, document mutations, and profile role promotions.
+  - **Operational Telemetry:** Dedicated, sanitized telemetry table for system diagnostic metrics, RPC errors, and performance warnings, isolated from compliance audit data.
+  - **Admin-Only Query RPCs:** Hardened `SECURITY DEFINER` interfaces (`admin_list_audit_logs`, `admin_get_audit_stats`, `admin_list_telemetry_events`, `admin_get_telemetry_summary`) enforce caller authentication and admin status.
+  - **Retention Policy Framework:** Clearly distinguishes statutory minimums (e.g. CERT-In 180-day ICT system log mandate, DPDP Act 2023 storage limitation) from internal product retention policies (365-day hot audit log retention, 90-day telemetry purging).
+
 ---
 
 ## 4. Intended Review Order and Dependencies
@@ -132,6 +149,7 @@ flowchart LR
     P2 --> P3["Part 3: Storage<br/>(Private Bucket, Storage RLS)"]
     P3 --> P4["Part 4: Appointment Engine<br/>(Transactional RPCs & Locking)"]
     P4 --> P5["Part 5: Admin Review<br/>(Doctor Adjudication & Dashboard)"]
+    P5 --> P6["Part 6: Audit & Telemetry<br/>(Immutable Logs & Minimization)"]
 ```
 
 1. **Part 1** establishes the tables and foreign keys required by Part 2.
@@ -139,6 +157,7 @@ flowchart LR
 3. **Part 3** creates the storage infrastructure and document deletion queue referenced in Part 4 and Part 5.
 4. **Part 4** coordinates transactions across all underlying tables and storage objects.
 5. **Part 5** establishes administrative adjudication, role promotion from patient to doctor, and document review.
+6. **Part 6** attaches automated audit triggers across clinical and onboarding tables, guaranteeing non-repudiation.
 
 ---
 
@@ -188,13 +207,14 @@ During the Phase 2 audit, the following cross-part interactions were identified,
 To verify all Phase 2 files locally, run the master verification script using Python 3:
 
 ```bash
-# Run the complete Phase 2 verification suite (Parts 1 to 5)
+# Run the complete Phase 2 verification suite (Parts 1 to 6)
 python docs/phase-2/verify_all_phase2.py
 
 # Or run individual part verification scripts:
 python docs/phase-2/part-3-storage-verification/verify_storage_sql.py
 python docs/phase-2/part-4-appointment-engine/verify_part4_sql.py
 python docs/phase-2/part-5-admin-review/verify_part5_sql.py
+python docs/phase-2/part-6-audit-telemetry/verify_part6_sql.py
 ```
 
 All verification suites exit with code `0` on success and print itemized results for every security assertion.

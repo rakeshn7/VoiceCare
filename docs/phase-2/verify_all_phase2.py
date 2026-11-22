@@ -19,11 +19,13 @@ PART2_DIR = CURRENT_DIR / "part-2-authentication-roles"
 PART3_DIR = CURRENT_DIR / "part-3-storage-verification"
 PART4_DIR = CURRENT_DIR / "part-4-appointment-engine"
 PART5_DIR = CURRENT_DIR / "part-5-admin-review"
+PART6_DIR = CURRENT_DIR / "part-6-audit-telemetry"
 FUNCTIONS_DIR = PROJECT_ROOT / "supabase" / "functions"
 
 sys.path.insert(0, str(PART3_DIR))
 sys.path.insert(0, str(PART4_DIR))
 sys.path.insert(0, str(PART5_DIR))
+sys.path.insert(0, str(PART6_DIR))
 
 def strip_sql_comments(sql: str) -> str:
     sql_no_block = re.sub(r'/\*.*?\*/', '', sql, flags=re.DOTALL)
@@ -36,7 +38,7 @@ def file_hash(path: Path) -> str:
 
 def run_suite() -> bool:
     print("=" * 80)
-    print("VOICECARE PHASE 2: MASTER STATIC VERIFICATION SUITE (PARTS 1 - 5)")
+    print("VOICECARE PHASE 2: MASTER STATIC VERIFICATION SUITE (PARTS 1 - 6)")
     print("=" * 80)
     
     errors = []
@@ -64,6 +66,10 @@ def run_suite() -> bool:
         (PART5_DIR / "voicecare_phase2_part5_design.md", "Part 5 Design"),
         (PART5_DIR / "voicecare_phase2_part5_notes.md", "Part 5 Notes"),
         (PART5_DIR / "verify_part5_sql.py", "Part 5 Verification Script"),
+        (PART6_DIR / "voicecare_phase2_part6_audit.sql", "Part 6 SQL"),
+        (PART6_DIR / "voicecare_phase2_part6_design.md", "Part 6 Design"),
+        (PART6_DIR / "voicecare_phase2_part6_notes.md", "Part 6 Notes"),
+        (PART6_DIR / "verify_part6_sql.py", "Part 6 Verification Script"),
         (FUNCTIONS_DIR / "create-doctor-upload-url" / "index.ts", "Edge Function: create-doctor-upload-url"),
         (FUNCTIONS_DIR / "create-doctor-document-view-url" / "index.ts", "Edge Function: create-doctor-document-view-url"),
         (FUNCTIONS_DIR / "cleanup-storage-queue" / "index.ts", "Edge Function: cleanup-storage-queue"),
@@ -190,9 +196,21 @@ def run_suite() -> bool:
         errors.append(f"Failed to execute Part 5 verification script: {ex}")
 
     # -------------------------------------------------------------------------
-    # SUITE CHECK 8: Supabase Edge Functions Audit
+    # SUITE CHECK 8: Part 6 Audit Logging & Telemetry Verification
     # -------------------------------------------------------------------------
-    print("\n--- [SUITE CHECK 8] SUPABASE EDGE FUNCTIONS SECURITY AUDIT ---")
+    print("\n--- [SUITE CHECK 8] PART 6 AUDIT LOGGING & TELEMETRY AUDIT ---")
+    try:
+        import verify_part6_sql
+        p6_success = verify_part6_sql.run_verification()
+        if not p6_success:
+            errors.append("Part 6 static verification reported failures.")
+    except Exception as ex:
+        errors.append(f"Failed to execute Part 6 verification script: {ex}")
+
+    # -------------------------------------------------------------------------
+    # SUITE CHECK 9: Supabase Edge Functions Audit
+    # -------------------------------------------------------------------------
+    print("\n--- [SUITE CHECK 9] SUPABASE EDGE FUNCTIONS SECURITY AUDIT ---")
     upload_fn_path = FUNCTIONS_DIR / "create-doctor-upload-url" / "index.ts"
     if upload_fn_path.exists():
         with open(upload_fn_path, "r", encoding="utf-8") as f:
@@ -248,9 +266,9 @@ def run_suite() -> bool:
         errors.append(f"Missing Edge Function: {cleanup_fn_path}")
 
     # -------------------------------------------------------------------------
-    # SUITE CHECK 9: Cross-Part Invariants & Permissions Reconciliation Audit
+    # SUITE CHECK 10: Cross-Part Invariants & Permissions Reconciliation Audit
     # -------------------------------------------------------------------------
-    print("\n--- [SUITE CHECK 9] CROSS-PART INVARIANTS & RECONCILIATION AUDIT ---")
+    print("\n--- [SUITE CHECK 10] CROSS-PART INVARIANTS & RECONCILIATION AUDIT ---")
     
     # 8.1 Base Table Grants on doctor_documents: No client INSERT in Part 2
     part2_doc_grants = re.findall(r'GRANT\s+([^;]+)\s+ON\s+(?:TABLE\s+)?public\.doctor_documents\s+TO\s+authenticated', p2_sql, re.IGNORECASE)
@@ -304,7 +322,7 @@ def run_suite() -> bool:
         return False
 
     print("\n" + "=" * 80)
-    print(">>> MASTER VERIFICATION SUCCESSFUL: ALL 5 PARTS VERIFIED WITH ZERO ERRORS! <<<")
+    print(">>> MASTER VERIFICATION SUCCESSFUL: ALL 6 PARTS VERIFIED WITH ZERO ERRORS! <<<")
     print("=" * 80)
     return True
 
