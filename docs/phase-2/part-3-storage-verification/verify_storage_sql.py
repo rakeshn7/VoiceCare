@@ -92,18 +92,18 @@ def run_checks(sql_path: Path) -> bool:
     if all_reqs_found:
         print(f"[PASS 4/7] Required structures check: All {len(required_structures)} DDL structures, policies, and grants present.")
 
-    # 5. Check function attributes (SECURITY DEFINER, search_path = pg_catalog, OWNER TO postgres)
+    # 5. Check function attributes (SECURITY DEFINER / SECURITY INVOKER, search_path = pg_catalog, OWNER TO postgres)
     funcs = [
-        "public.validate_doctor_document_path",
-        "public.validate_doctor_document_metadata",
-        "public.is_doctor_document_owner",
-        "public.enqueue_doctor_document_storage_deletion",
+        ("public.validate_doctor_document_path", "INVOKER"),
+        ("public.validate_doctor_document_metadata", "INVOKER"),
+        ("public.is_doctor_document_owner", "DEFINER"),
+        ("public.enqueue_doctor_document_storage_deletion", "DEFINER"),
     ]
     all_funcs_valid = True
-    for func in funcs:
-        pattern_sec = rf"CREATE OR REPLACE FUNCTION\s+{re.escape(func)}.*?SECURITY DEFINER"
+    for func, mode in funcs:
+        pattern_sec = rf"CREATE OR REPLACE FUNCTION\s+{re.escape(func)}.*?SECURITY\s+{mode}"
         if not re.search(pattern_sec, content, re.DOTALL):
-            errors.append(f"Function {func} is missing SECURITY DEFINER")
+            errors.append(f"Function {func} is missing SECURITY {mode}")
             all_funcs_valid = False
         pattern_sp = rf"CREATE OR REPLACE FUNCTION\s+{re.escape(func)}.*?SET search_path = pg_catalog"
         if not re.search(pattern_sp, content, re.DOTALL):
@@ -114,7 +114,7 @@ def run_checks(sql_path: Path) -> bool:
             errors.append(f"Function {func} is missing ALTER ... OWNER TO postgres;")
             all_funcs_valid = False
     if all_funcs_valid:
-        print(f"[PASS 5/7] Function hardening check: All {len(funcs)} functions enforce SECURITY DEFINER, search_path = pg_catalog, and postgres ownership.")
+        print(f"[PASS 5/7] Function hardening check: All {len(funcs)} functions enforce appropriate SECURITY DEFINER/INVOKER, search_path = pg_catalog, and postgres ownership.")
 
     # 6. Check RLS policies on storage.objects (4 operations + UPDATE using/check)
     policies = [

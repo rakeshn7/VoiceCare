@@ -99,9 +99,9 @@ def run_verification() -> bool:
 
         match = re.search(rf'CREATE\s+OR\s+REPLACE\s+FUNCTION\s+public\.{fn}\b.*?\$\$(.*?)\$\$;', content, re.DOTALL)
         if match:
-            fn_block = content[content.find(match.group(0)):content.find(match.group(0)) + len(match.group(0)) + 200]
-            if "SECURITY DEFINER" not in match.group(0):
-                errors.append(f"Function public.{fn} missing SECURITY DEFINER.")
+            expected_sec = "SECURITY INVOKER" if fn == "prevent_audit_log_tampering" else "SECURITY DEFINER"
+            if expected_sec not in match.group(0):
+                errors.append(f"Function public.{fn} missing {expected_sec}.")
                 fn_hardening_ok = False
             if "SET search_path = pg_catalog" not in match.group(0):
                 errors.append(f"Function public.{fn} missing SET search_path = pg_catalog.")
@@ -111,7 +111,7 @@ def run_verification() -> bool:
                 fn_hardening_ok = False
 
     if fn_hardening_ok:
-        print(f" [PASS 4/9] RPC hardening check: All {len(expected_functions)} functions enforce SECURITY DEFINER, search_path = pg_catalog, and postgres ownership.")
+        print(f" [PASS 4/9] RPC hardening check: All {len(expected_functions)} functions enforce appropriate SECURITY DEFINER/INVOKER, search_path = pg_catalog, and postgres ownership.")
 
     # 5. Authorization Guards in Admin RPCs
     admin_rpcs = [

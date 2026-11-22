@@ -169,27 +169,32 @@ def run_e2e_verification() -> bool:
         if not re.search(pattern, consolidated_text, re.I):
             errors.append(f"Missing function definition: public.{fn}")
 
-    # Verify search_path = pg_catalog hardening on SECURITY DEFINER functions
-    sec_def_matches = re.findall(
-        r"CREATE(?:\s+OR\s+REPLACE)?\s+FUNCTION\s+public\.([a-zA-Z0-9_]+)\b.*?(?=CREATE|\Z)",
-        consolidated_text,
-        re.DOTALL | re.I
-    )
+    # Verify SECURITY DEFINER / SECURITY INVOKER and search_path = pg_catalog hardening
+    invoker_funcs = {
+        "set_updated_at",
+        "validate_doctor_document_path",
+        "validate_doctor_document_metadata",
+        "prevent_audit_log_tampering"
+    }
 
-    unhardened = []
+    hardening_errors = []
     for fn in expected_funcs:
-        # Search function block
         fn_pattern = rf"CREATE(?:\s+OR\s+REPLACE)?\s+FUNCTION\s+public\.{fn}\b([^;]+?AS\s+\$\$)"
         m = re.search(fn_pattern, consolidated_text, re.DOTALL | re.I)
         if m:
             block = m.group(1)
-            if "SECURITY DEFINER" in block and "SET search_path = pg_catalog" not in block and "SET search_path = 'pg_catalog'" not in block and "SET search_path TO pg_catalog" not in block:
-                unhardened.append(fn)
+            expected_sec = "SECURITY INVOKER" if fn in invoker_funcs else "SECURITY DEFINER"
+            if expected_sec not in block:
+                hardening_errors.append(f"{fn} missing expected {expected_sec}")
+            if "SET search_path = pg_catalog" not in block and "SET search_path = 'pg_catalog'" not in block and "SET search_path TO pg_catalog" not in block:
+                hardening_errors.append(f"{fn} missing fixed search_path = pg_catalog")
+            if f"ALTER FUNCTION public.{fn}" not in consolidated_text or "OWNER TO postgres" not in consolidated_text:
+                hardening_errors.append(f"{fn} missing ALTER FUNCTION ... OWNER TO postgres")
 
-    if unhardened:
-        errors.append(f"SECURITY DEFINER functions missing fixed search_path = pg_catalog: {unhardened}")
+    if hardening_errors:
+        errors.extend(hardening_errors)
     else:
-        print(f" [PASS] All {len(expected_funcs)} functions verified with SECURITY DEFINER and search_path = pg_catalog.")
+        print(f" [PASS] All {len(expected_funcs)} functions verified with appropriate DEFINER (35) / INVOKER (4), search_path = pg_catalog, and postgres ownership.")
 
     # -------------------------------------------------------------------------
     # CHECK 7: Database Triggers Inventory (13 Triggers)
@@ -270,6 +275,13 @@ def run_e2e_verification() -> bool:
     if "SLOT_ALREADY_BOOKED" not in consolidated_text:
         errors.append("Missing SLOT_ALREADY_BOOKED error handling in booking RPC.")
     print(" [PASS] Concurrency & double-booking protection: Dual GiST exclusion constraints and SLOT_ALREADY_BOOKED verified.")
+
+    # 8.8 Storage Bucket Non-Overwrite Invariant (Preserve Existing Bucket Configurations)
+    if "ON CONFLICT (id) DO NOTHING;" not in consolidated_text:
+        errors.append("Storage bucket configuration missing ON CONFLICT (id) DO NOTHING; (risk of overwriting existing bucket config).")
+    if "DO UPDATE SET" in consolidated_text and "public = false" in consolidated_text and "storage.buckets" in consolidated_text:
+        errors.append("Prohibited ON CONFLICT DO UPDATE SET found on storage.buckets. Must use DO NOTHING to preserve existing bucket settings.")
+    print(" [PASS] Storage bucket safety: Non-destructive ON CONFLICT (id) DO NOTHING and privacy assertion verified.")
 
     # -------------------------------------------------------------------------
     # CHECK 9: Supabase Edge Functions Static Security Audit

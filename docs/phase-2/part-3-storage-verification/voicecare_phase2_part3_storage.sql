@@ -189,15 +189,16 @@ VALUES (
         'image/webp'
     ]::text[]
 )
-ON CONFLICT (id) DO UPDATE SET
-    public             = false,
-    file_size_limit    = 10485760,
-    allowed_mime_types = ARRAY[
-        'application/pdf',
-        'image/png',
-        'image/jpeg',
-        'image/webp'
-    ]::text[];
+ON CONFLICT (id) DO NOTHING;
+
+-- Assert that if 'doctor-docs' bucket already exists, it is strictly private
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM storage.buckets WHERE id = 'doctor-docs' AND public = true) THEN
+        RAISE EXCEPTION 'Security assertion failed: Storage bucket "doctor-docs" exists but is configured as public (public = true). It must be strictly private.'
+            USING ERRCODE = '42501';
+    END IF;
+END $$;
 
 COMMENT ON TABLE storage.buckets IS 'Supabase Storage buckets registry';
 
@@ -227,7 +228,7 @@ CREATE OR REPLACE FUNCTION public.validate_doctor_document_path(p_name text)
 RETURNS BOOLEAN
 LANGUAGE plpgsql
 STABLE
-SECURITY DEFINER
+SECURITY INVOKER
 SET search_path = pg_catalog
 AS $$
 DECLARE
@@ -313,7 +314,7 @@ CREATE OR REPLACE FUNCTION public.validate_doctor_document_metadata(p_meta jsonb
 RETURNS BOOLEAN
 LANGUAGE plpgsql
 STABLE
-SECURITY DEFINER
+SECURITY INVOKER
 SET search_path = pg_catalog
 AS $$
 DECLARE

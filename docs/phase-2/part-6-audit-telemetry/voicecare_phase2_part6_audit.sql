@@ -155,7 +155,7 @@ COMMENT ON TABLE public.operational_telemetry
 CREATE OR REPLACE FUNCTION public.prevent_audit_log_tampering()
 RETURNS TRIGGER
 LANGUAGE plpgsql
-SECURITY DEFINER
+SECURITY INVOKER
 SET search_path = pg_catalog
 AS $$
 BEGIN

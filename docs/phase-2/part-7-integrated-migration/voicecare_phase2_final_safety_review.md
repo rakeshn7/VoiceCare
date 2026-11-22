@@ -36,9 +36,9 @@ Below is the definitive function-by-function architectural audit of all 39 funct
 | **7** | `public.protect_profile_role` | `TRIGGER` | `SECURITY DEFINER` | **DEFINER REQUIRED** | Trigger on `public.profiles` (`BEFORE UPDATE OF role`). Access control guard blocking non-administrators from promoting their role. Evaluates `public.is_admin()` under definer context. |
 | **8** | `public.protect_doctor_fields` | `TRIGGER` | `SECURITY DEFINER` | **DEFINER REQUIRED** | Trigger on `public.doctors` (`BEFORE UPDATE`). Enforces that `is_approved`, `is_active`, `rating`, and `review_count` can only be altered by administrators. |
 | **9** | `public.sync_doctor_approval` | `TRIGGER` | `SECURITY DEFINER` | **DEFINER REQUIRED** | Trigger on `public.doctor_verifications` (`AFTER INSERT OR UPDATE OF status`). Automatically synchronizes `public.doctors.is_approved` and `is_active`. Normal users do not have `UPDATE` privileges on `doctors.is_approved`. |
-| **10** | `public.set_updated_at` | `TRIGGER` | `SECURITY DEFINER` | **INVOKER RECOMMENDED** | **Over-privileged.** Simply executes `NEW.updated_at = now(); RETURN NEW;`. Does not query any tables or perform privileged actions. While safe due to `search_path = pg_catalog`, declaring it `SECURITY INVOKER` represents strict least privilege. |
-| **11** | `public.validate_doctor_document_path` | `BOOLEAN` | `SECURITY DEFINER` | **INVOKER RECOMMENDED** | **Over-privileged.** Pure scalar validation function testing string regex pattern (`^[0-9a-fA-F-]{36}/[a-zA-Z0-9_\-\.]{1,255}$`). Does not query any database table. Should use `SECURITY INVOKER`. |
-| **12** | `public.validate_doctor_document_metadata` | `BOOLEAN` | `SECURITY DEFINER` | **INVOKER RECOMMENDED** | **Over-privileged.** Pure parameter validation checking MIME whitelist and calling `validate_doctor_document_path`. Accesses zero database tables. Should use `SECURITY INVOKER`. |
+| **10** | `public.set_updated_at` | `TRIGGER` | `SECURITY INVOKER` | **INVOKER APPLIED** | **Corrected to least privilege.** Simply executes `NEW.updated_at = now(); RETURN NEW;`. Operates on the in-memory tuple. Runs safely under caller privileges with fixed `search_path = pg_catalog`. |
+| **11** | `public.validate_doctor_document_path` | `BOOLEAN` | `SECURITY INVOKER` | **INVOKER APPLIED** | **Corrected to least privilege.** Pure scalar validation function testing string regex pattern (`^[0-9a-fA-F-]{36}/[a-zA-Z0-9_\-\.]{1,255}$`). Accesses zero database tables. |
+| **12** | `public.validate_doctor_document_metadata` | `BOOLEAN` | `SECURITY INVOKER` | **INVOKER APPLIED** | **Corrected to least privilege.** Pure parameter validation checking MIME whitelist and calling `validate_doctor_document_path`. Accesses zero database tables. |
 | **13** | `public.is_doctor_document_owner` | `BOOLEAN` | `SECURITY DEFINER` | **DEFINER REQUIRED** | Evaluated within Storage RLS policies on `storage.objects`. Must query `public.doctors` and `public.profiles` from the storage context where authenticated callers lack direct cross-schema table permissions. |
 | **14** | `public.enqueue_doctor_document_storage_deletion` | `TRIGGER` | `SECURITY DEFINER` | **DEFINER REQUIRED** | Trigger on `public.doctor_documents` (`AFTER DELETE`). Inserts deleted file paths into `public.storage_deletion_queue`. Direct client `INSERT` on `storage_deletion_queue` is revoked, requiring DEFINER for ordinary doctors deleting their files. |
 | **15** | `public.submit_doctor_application` | `UUID` | `SECURITY DEFINER` | **DEFINER REQUIRED** | Atomically creates unapproved records in `doctors` and `doctor_verifications` while caller role is still `'patient'`. Since `patient` role has no direct INSERT privileges on `doctors`, this RPC must run as DEFINER. |
@@ -55,7 +55,7 @@ Below is the definitive function-by-function architectural audit of all 39 funct
 | **26** | `public.admin_list_doctor_applications` | `JSONB` | `SECURITY DEFINER` | **DEFINER REQUIRED** | Administrative query across unapproved doctor applications, verification dossiers, and document counts. Gated to `is_admin() = true`. |
 | **27** | `public.admin_get_doctor_application_details` | `JSONB` | `SECURITY DEFINER` | **DEFINER REQUIRED** | Full application dossier retrieval including verification history and document metadata. Gated to `is_admin() = true`. |
 | **28** | `public.admin_get_application_stats` | `JSONB` | `SECURITY DEFINER` | **DEFINER REQUIRED** | Administrative aggregation query reporting pending, approved, rejected, and suspended counts. Gated to `is_admin() = true`. |
-| **29** | `public.prevent_audit_log_tampering` | `TRIGGER` | `SECURITY DEFINER` | **INVOKER RECOMMENDED** | **Over-privileged.** Trigger on `audit_logs` and `operational_telemetry`. Simply raises exception `42501 IMMUTABLE_AUDIT_RECORD`. Does not access any table. Can safely be `SECURITY INVOKER`. |
+| **29** | `public.prevent_audit_log_tampering` | `TRIGGER` | `SECURITY INVOKER` | **INVOKER APPLIED** | **Corrected to least privilege.** Trigger on `audit_logs` and `operational_telemetry`. Simply raises exception `42501 IMMUTABLE_AUDIT_RECORD`. Does not access any table. Runs safely under caller context. |
 | **30** | `public.record_audit_log_internal` | `UUID` | `SECURITY DEFINER` | **DEFINER REQUIRED** | Core audit logging engine. Inserts into `public.audit_logs` where client `INSERT` is revoked. Must run as DEFINER to allow automated triggers to record events. |
 | **31** | `public.audit_doctor_verification_lifecycle` | `TRIGGER` | `SECURITY DEFINER` | **DEFINER REQUIRED** | Trigger capturing verification state transitions and invoking `record_audit_log_internal`. |
 | **32** | `public.audit_appointment_lifecycle` | `TRIGGER` | `SECURITY DEFINER` | **DEFINER REQUIRED** | Trigger capturing appointment booking, cancellation, completion, and rescheduling. |
@@ -67,9 +67,9 @@ Below is the definitive function-by-function architectural audit of all 39 funct
 | **38** | `public.admin_list_telemetry_events` | `JSONB` | `SECURITY DEFINER` | **DEFINER REQUIRED** | System diagnostic and component error query. Gated to `is_admin() = true`. |
 | **39** | `public.admin_get_telemetry_summary` | `JSONB` | `SECURITY DEFINER` | **DEFINER REQUIRED** | Rolling 24-hour system health diagnostic summary. Gated to `is_admin() = true`. |
 
-### 2.2 Summary of Function Auditing Findings
+### 2.2 Summary of Function Auditing & Corrections
 - **35 functions legitimately require `SECURITY DEFINER`**: They prevent RLS recursion, coordinate cross-table transactions where clients lack direct base table grants, or enforce admin-only adjudication.
-- **4 functions are over-privileged with `SECURITY DEFINER`** (`set_updated_at`, `validate_doctor_document_path`, `validate_doctor_document_metadata`, `prevent_audit_log_tampering`): These functions access zero tables. While they pose no exploitation risk because `SET search_path = pg_catalog` is fixed and dynamic SQL is not used, declaring them `SECURITY INVOKER` represents strict least-privilege practice.
+- **4 functions have been corrected to `SECURITY INVOKER`** (`set_updated_at`, `validate_doctor_document_path`, `validate_doctor_document_metadata`, `prevent_audit_log_tampering`): These functions access zero database tables. Removing `SECURITY DEFINER` eliminates unnecessary privilege escalation, enforces strict least privilege, and maintains 100% of the intended trigger and validation behavior. All 4 functions retain `SET search_path = pg_catalog` and `OWNER TO postgres`.
 
 ---
 
@@ -111,20 +111,39 @@ Every `SECURITY DEFINER` function was inspected for authorization bypass risks:
 
 ---
 
-## 6. Data Preservation & Non-Destructive DDL Audit
+## 6. Comprehensive Data Preservation, Mutation & Storage Configuration Audit
 
-- **`DROP TABLE`:** `0` occurrences.
-- **`TRUNCATE`:** `0` occurrences.
-- **`DELETE FROM`:** `0` occurrences.
-- **Idempotency Mechanisms:**
-  - Tables: `CREATE TABLE IF NOT EXISTS public.<tbl>`
-  - Types: `DO $$ BEGIN CREATE TYPE ... EXCEPTION WHEN duplicate_object THEN null; END $$;`
-  - Constraints: `ALTER TABLE ... DROP CONSTRAINT IF EXISTS ...; ADD CONSTRAINT ...`
-  - Policies: `DROP POLICY IF EXISTS "<pol>" ...; CREATE POLICY ...`
-  - Triggers: `DROP TRIGGER IF EXISTS <trg> ...; CREATE TRIGGER ...`
-  - Storage Bucket: `INSERT INTO storage.buckets (...) ON CONFLICT (id) DO UPDATE ...`
+Every SQL statement in `voicecare_phase2_consolidated_migration.sql` capable of modifying schema objects, constraints, policies, or data was individually analyzed:
 
-Existing table data is strictly preserved during migration re-execution.
+### 6.1 Statement-by-Statement Mutation Analysis
+
+| Mutation Category | Occurrences in SQL | Target Objects | What Existing Data / Config It Can Affect | Can It Overwrite Existing Values? | Safe on Non-Empty Database? | Reversible? |
+| :--- | :---: | :--- | :--- | :---: | :---: | :---: |
+| **`storage.buckets` Configuration** | 1 | `storage.buckets` (`'doctor-docs'`) | Only affects the `'doctor-docs'` bucket row if it already exists. | **NO (Corrected).** Changed from `ON CONFLICT (id) DO UPDATE SET` to `ON CONFLICT (id) DO NOTHING;`. If `'doctor-docs'` already exists, existing `public`, `file_size_limit`, and `allowed_mime_types` settings are untouched. Additionally asserts `public = false`. | **YES** | **YES** |
+| **`ON CONFLICT DO NOTHING`** | 2 | `public.profiles` (line 804 in `handle_new_user`), `storage.buckets` (line 1604) | None. Skips insert if primary key already exists. | **NO.** Zero data or configuration is modified when conflict is detected. | **YES** | **YES** |
+| **`ON CONFLICT DO UPDATE`** | 1 | `public.patients` (line 2791 in `complete_patient_onboarding` RPC) | Patient onboarding profile record for `auth.uid()`. | **CONTROLLED.** Only updates patient details when the patient explicitly re-submits their onboarding form. Uses `COALESCE(EXCLUDED.col, patients.col)` to prevent nulling existing data. | **YES** | **YES** |
+| **`DROP CONSTRAINT`** | 3 | `doctor_schedules.uq_doctor_schedules_no_overlap`, `appointments.uq_doctor_no_appointment_overlap`, `appointments.uq_patient_no_appointment_overlap` | Existing constraints on schedules and appointments. | **NO.** In PostgreSQL, `ADD CONSTRAINT` has no `IF NOT EXISTS` clause. Dropping the constraint before re-adding it with `ADD CONSTRAINT ... EXCLUDE USING gist` ensures idempotent execution. `ADD CONSTRAINT` validates all existing rows; if existing data violates the constraint, PostgreSQL aborts and rolls back the transaction. | **YES** | **YES** |
+| **`DROP POLICY`** | 41 | RLS policies on all 12 tables and `storage.objects` | Row Level Security policies. | **NO.** In PostgreSQL, `CREATE POLICY` has no `OR REPLACE` syntax. Dropping existing policy names before re-creating them is the standard idempotent pattern. Does not delete, modify, or corrupt table data. | **YES** | **YES** |
+| **`ALTER TABLE ... ENABLE RLS`** | 13 | All 12 application tables + `storage.objects` | Row filtering mode. | **NO.** Enables RLS on tables. Idempotent if RLS is already active. Does not modify table rows. | **YES** | **YES** |
+| **`UPDATE` (in RPCs & triggers)** | 19 | `profiles`, `doctors`, `appointments`, `in_app_reminders`, `doctor_verifications` | Specific rows targeted by user actions (e.g. appointment cancellation, admin approval). | **CONTROLLED.** Every `UPDATE` statement in the migration is enclosed inside a transactional RPC or trigger with a strict `WHERE id = ...` or `WHERE doctor_id = ...` clause under row lock (`FOR UPDATE`). Zero unconditional table-wide updates exist. | **YES** | **YES** |
+| **`DELETE FROM`** | 0 | None | None. Zero `DELETE` statements exist in the consolidated migration script. | **N/A** | **YES** | **YES** |
+| **`DROP TABLE`** | 0 | None | None. Zero `DROP TABLE` statements exist in the consolidated migration script. | **N/A** | **YES** | **YES** |
+| **`TRUNCATE`** | 0 | None | None. Zero `TRUNCATE` statements exist in the consolidated migration script. | **N/A** | **YES** | **YES** |
+
+### 6.2 Storage Bucket Safety Deep Dive
+
+- **Previous Risk Identified:** The initial storage setup used `INSERT INTO storage.buckets (...) ON CONFLICT (id) DO UPDATE SET public = false, file_size_limit = ..., allowed_mime_types = ...;`. If a staging database had an existing bucket named `doctor-docs` with custom file size limits or MIME types, re-running the migration would have silently overwritten those settings.
+- **Correction Applied:**
+  1. Changed to non-destructive `ON CONFLICT (id) DO NOTHING;`. If `doctor-docs` exists, its existing configuration is preserved without modification.
+  2. Added a defensive security assertion:
+     ```sql
+     -- Assert that if 'doctor-docs' bucket already exists, it is strictly private
+     IF EXISTS (SELECT 1 FROM storage.buckets WHERE id = 'doctor-docs' AND public = true) THEN
+         RAISE EXCEPTION 'Security assertion failed: Storage bucket "doctor-docs" exists but is configured as public (public = true). It must be strictly private.'
+             USING ERRCODE = '42501';
+     END IF;
+     ```
+  3. Existing unrelated storage buckets (e.g., `avatars`, `reports`) and foreign storage policies are untouched, and any foreign permissive policy on `storage.objects` triggers the fail-closed preflight halt.
 
 ---
 

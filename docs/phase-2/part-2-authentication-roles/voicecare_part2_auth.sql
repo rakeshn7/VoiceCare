@@ -344,7 +344,7 @@ CREATE TRIGGER trg_sync_doctor_approval
 CREATE OR REPLACE FUNCTION public.set_updated_at()
 RETURNS TRIGGER
 LANGUAGE plpgsql
-SECURITY DEFINER
+SECURITY INVOKER
 SET search_path = pg_catalog
 AS $$
 BEGIN
