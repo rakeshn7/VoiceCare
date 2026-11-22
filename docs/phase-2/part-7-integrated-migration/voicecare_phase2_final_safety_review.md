@@ -141,7 +141,7 @@ Every SQL statement in `voicecare_phase2_consolidated_migration.sql` capable of 
 
 | Mutation Category | Occurrences in SQL | Target Objects | What Existing Data / Config It Can Affect | Can It Overwrite Existing Values? | Safe on Non-Empty Database? | Reversible? |
 | :--- | :---: | :--- | :--- | :---: | :---: | :---: |
-| **`storage.buckets` Configuration** | 1 | `storage.buckets` (`'doctor-docs'`) | Only affects the `'doctor-docs'` bucket row if it already exists. | **NO (Corrected).** Changed to `ON CONFLICT (id) DO NOTHING;`. If `'doctor-docs'` already exists, existing `public`, `file_size_limit`, and `allowed_mime_types` settings are untouched. Additionally asserts `public = false`. | **YES** | **YES** |
+| **`storage.buckets` Configuration** | 1 | `storage.buckets` (`'doctor-docs'`) | Only affects the `'doctor-docs'` bucket row if it already exists. | **NO.** `ON CONFLICT (id) DO NOTHING;` creates bucket if absent. If bucket already exists, an explicit fail-closed verification block checks all 3 required settings (`public = false`, `file_size_limit = 10485760`, and exact MIME allowlist). If any setting diverges, it does NOT overwrite; it aborts with a clear error requiring administrator review. | **YES** | **YES** |
 | **`ON CONFLICT DO NOTHING`** | 2 | `public.profiles` (`handle_new_user`), `storage.buckets` (`doctor-docs`) | None. Skips insert if primary key already exists. | **NO.** Zero data or configuration is modified when conflict is detected. | **YES** | **YES** |
 | **`ON CONFLICT DO UPDATE`** | 1 | `public.patients` (`complete_patient_onboarding` RPC) | Patient onboarding profile record for `auth.uid()`. | **CONTROLLED.** Only updates patient details when the patient explicitly re-submits their onboarding form. Uses `COALESCE(EXCLUDED.col, patients.col)` to prevent nulling existing data. | **YES** | **YES** |
 | **`DROP CONSTRAINT`** | 3 | `doctor_schedules.uq_doctor_schedules_no_overlap`, `appointments.uq_doctor_no_appointment_overlap`, `appointments.uq_patient_no_appointment_overlap` | Existing constraints on schedules and appointments. | **NO.** PostgreSQL lacks `ADD CONSTRAINT IF NOT EXISTS` for exclusion constraints. Dropping before re-adding is required for idempotency. Guarded by explicit conflict pre-checks (Section 6.3). | **YES** | **YES** |
@@ -152,20 +152,51 @@ Every SQL statement in `voicecare_phase2_consolidated_migration.sql` capable of 
 | **`DROP TABLE`** | 0 | None | None. Zero `DROP TABLE` statements exist in the consolidated migration script. | **N/A** | **YES** | **YES** |
 | **`TRUNCATE`** | 0 | None | None. Zero `TRUNCATE` statements exist in the consolidated migration script. | **N/A** | **YES** | **YES** |
 
-### 6.2 Storage Bucket Safety Deep Dive
+### 6.2 Storage Bucket Safety & Verification Deep Dive
 
-- **Vulnerability Identified in Previous Draft:** The initial storage setup used `INSERT INTO storage.buckets (...) ON CONFLICT (id) DO UPDATE SET public = false, file_size_limit = ..., allowed_mime_types = ...;`. If a staging database had an existing bucket named `doctor-docs` with custom file size limits or MIME types, re-running the migration would have silently overwritten those settings.
-- **Correction Applied:**
-  1. Changed to non-destructive `ON CONFLICT (id) DO NOTHING;`. If `doctor-docs` exists, its existing configuration is preserved without modification.
-  2. Added a defensive security assertion:
+- **Vulnerability Identified in Initial Draft:** The initial storage setup used `INSERT INTO storage.buckets (...) ON CONFLICT (id) DO UPDATE SET public = false, file_size_limit = ..., allowed_mime_types = ...;`. If a staging database had an existing bucket named `doctor-docs` with custom settings, re-running the migration would have silently overwritten them.
+- **Limitation of Partial Fix:** Changing solely to `ON CONFLICT (id) DO NOTHING` with a check for `public = true` ensured the bucket was private, but failed to verify whether an existing bucket satisfied the required 10 MB file size limit and allowed MIME types.
+- **Fail-Closed Verification Strategy Implemented:**
+  1. **Non-Destructive Creation:** Uses `ON CONFLICT (id) DO NOTHING;` so that pre-existing bucket configurations are never silently modified.
+  2. **Comprehensive Fail-Closed Verification Block:**
      ```sql
-     -- Assert that if 'doctor-docs' bucket already exists, it is strictly private
-     IF EXISTS (SELECT 1 FROM storage.buckets WHERE id = 'doctor-docs' AND public = true) THEN
-         RAISE EXCEPTION 'Security assertion failed: Storage bucket "doctor-docs" exists but is configured as public (public = true). It must be strictly private.'
-             USING ERRCODE = '42501';
-     END IF;
+     DO $$
+     DECLARE
+         v_bucket RECORD;
+         v_expected_mimes text[] := ARRAY['application/pdf', 'image/png', 'image/jpeg', 'image/webp']::text[];
+         v_mismatches text := '';
+     BEGIN
+         SELECT * INTO v_bucket FROM storage.buckets WHERE id = 'doctor-docs';
+         IF NOT FOUND THEN
+             RAISE EXCEPTION 'CRITICAL CONFIGURATION ERROR: Storage bucket "doctor-docs" was not found in storage.buckets.'
+                 USING ERRCODE = 'P0002';
+         END IF;
+
+         -- 1. Verify privacy: must be strictly private (public = false)
+         IF v_bucket.public IS NOT FALSE THEN
+             v_mismatches := v_mismatches || format(E'\n  - public: %s (REQUIRED: false - bucket must be strictly private)', COALESCE(v_bucket.public::text, 'NULL'));
+         END IF;
+
+         -- 2. Verify file size limit: must be exactly 10485760 bytes (10 MB)
+         IF v_bucket.file_size_limit IS DISTINCT FROM 10485760 THEN
+             v_mismatches := v_mismatches || format(E'\n  - file_size_limit: %s bytes (REQUIRED: 10485760 bytes / 10 MB)', COALESCE(v_bucket.file_size_limit::text, 'NULL (unlimited)'));
+         END IF;
+
+         -- 3. Verify allowed MIME types: must match VoiceCare allowlist exactly
+         IF v_bucket.allowed_mime_types IS NULL
+            OR NOT (v_bucket.allowed_mime_types @> v_expected_mimes AND v_bucket.allowed_mime_types <@ v_expected_mimes) THEN
+             v_mismatches := v_mismatches || format(E'\n  - allowed_mime_types: %s (REQUIRED: %s)', COALESCE(array_to_string(v_bucket.allowed_mime_types, ', '), 'NULL'), array_to_string(v_expected_mimes, ', '));
+         END IF;
+
+         IF v_mismatches <> '' THEN
+             RAISE EXCEPTION 'Security Preflight Aborted: Storage bucket "doctor-docs" configuration mismatch!% Existing bucket configuration diverges from VoiceCare security requirements:% ...', E'\n', v_mismatches USING ERRCODE = '22023';
+         END IF;
+     END $$;
      ```
-  3. Existing unrelated storage buckets (e.g., `avatars`, `reports`) and foreign storage policies are untouched, and any foreign permissive policy on `storage.objects` triggers the fail-closed preflight halt.
+  3. **Explicit Mismatch Handling Strategy (Abort with Clear Error):**
+     Instead of silently mutating an existing bucket or allowing an insecure bucket (e.g. public, unlimited file size, or arbitrary MIME types) to persist, the migration aborts the transaction with code `22023` and provides the exact `UPDATE storage.buckets SET ...` SQL for the administrator to review and apply manually.
+  4. **Accurate SQL Documentation:** Corrected outdated comments; documentation accurately reflects `ON CONFLICT (id) DO NOTHING` paired with comprehensive fail-closed assertion.
+  5. **Storage Policy Isolation Preserved:** All 4 storage RLS policies on `storage.objects` (`"doctor_docs: select own or admin"`, etc.) remain strictly scoped to `bucket_id = 'doctor-docs'`. The foreign permissive policy preflight check in Section 0 remains active and fail-closed.
 
 ### 6.3 GiST Exclusion Constraint Replacement & Conflict Pre-Check Deep Dive
 

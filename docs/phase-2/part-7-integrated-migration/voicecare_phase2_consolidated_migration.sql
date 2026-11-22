@@ -1640,7 +1640,9 @@ END $$;
 --   - public    : false (STRICTLY PRIVATE - direct public CDN URLs disabled)
 --   - file_size_limit   : 10485760 bytes (10 MB per file)
 --   - allowed_mime_types: PDF and standard raster/lossless images
---   - Repeatable upsert resets parameters to secure state on every run.
+--   - Non-destructive insert (ON CONFLICT DO NOTHING) creates bucket if absent.
+--   - Comprehensive verification block asserts all 3 required security settings
+--     (privacy, size limit, and MIME allowlist), aborting with clear error if mismatched.
 -- =============================================================================
 
 INSERT INTO storage.buckets (
@@ -1664,12 +1666,64 @@ VALUES (
 )
 ON CONFLICT (id) DO NOTHING;
 
--- Assert that if 'doctor-docs' bucket already exists, it is strictly private
+-- Comprehensive bucket configuration verification: fail closed if any setting diverges
 DO $$
+DECLARE
+    v_bucket RECORD;
+    v_expected_mimes text[] := ARRAY['application/pdf', 'image/png', 'image/jpeg', 'image/webp']::text[];
+    v_mismatches text := '';
 BEGIN
-    IF EXISTS (SELECT 1 FROM storage.buckets WHERE id = 'doctor-docs' AND public = true) THEN
-        RAISE EXCEPTION 'Security assertion failed: Storage bucket "doctor-docs" exists but is configured as public (public = true). It must be strictly private.'
-            USING ERRCODE = '42501';
+    SELECT * INTO v_bucket FROM storage.buckets WHERE id = 'doctor-docs';
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'CRITICAL CONFIGURATION ERROR: Storage bucket "doctor-docs" was not found in storage.buckets.'
+            USING ERRCODE = 'P0002';
+    END IF;
+
+    -- 1. Verify privacy: must be strictly private (public = false)
+    IF v_bucket.public IS NOT FALSE THEN
+        v_mismatches := v_mismatches || format(
+            E'\n  - public: %s (REQUIRED: false - bucket must be strictly private)',
+            COALESCE(v_bucket.public::text, 'NULL')
+        );
+    END IF;
+
+    -- 2. Verify file size limit: must be exactly 10485760 bytes (10 MB)
+    IF v_bucket.file_size_limit IS DISTINCT FROM 10485760 THEN
+        v_mismatches := v_mismatches || format(
+            E'\n  - file_size_limit: %s bytes (REQUIRED: 10485760 bytes / 10 MB)',
+            COALESCE(v_bucket.file_size_limit::text, 'NULL (unlimited)')
+        );
+    END IF;
+
+    -- 3. Verify allowed MIME types: must match VoiceCare allowlist exactly
+    IF v_bucket.allowed_mime_types IS NULL
+       OR NOT (v_bucket.allowed_mime_types @> v_expected_mimes AND v_bucket.allowed_mime_types <@ v_expected_mimes) THEN
+        v_mismatches := v_mismatches || format(
+            E'\n  - allowed_mime_types: %s\n    (REQUIRED: %s)',
+            COALESCE(array_to_string(v_bucket.allowed_mime_types, ', '), 'NULL (all MIME types permitted)'),
+            array_to_string(v_expected_mimes, ', ')
+        );
+    END IF;
+
+    IF v_mismatches <> '' THEN
+        RAISE EXCEPTION
+            'Security Preflight Aborted: Storage bucket "doctor-docs" configuration mismatch!%
+Existing bucket configuration diverges from VoiceCare security requirements:%
+
+MANUAL ADMINISTRATOR REVIEW REQUIRED:
+An existing bucket "doctor-docs" was found with configuration diverging from VoiceCare security invariants.
+To safely reconcile the bucket configuration, an administrator should execute:
+
+  UPDATE storage.buckets
+  SET public = false,
+      file_size_limit = 10485760,
+      allowed_mime_types = ARRAY[''application/pdf'', ''image/png'', ''image/jpeg'', ''image/webp'']::text[]
+  WHERE id = ''doctor-docs'';
+
+Then re-run this migration.',
+            E'\n', v_mismatches
+            USING ERRCODE = '22023';
     END IF;
 END $$;
 

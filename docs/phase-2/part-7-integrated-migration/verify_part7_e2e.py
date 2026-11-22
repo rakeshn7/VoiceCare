@@ -276,12 +276,16 @@ def run_e2e_verification() -> bool:
         errors.append("Missing SLOT_ALREADY_BOOKED error handling in booking RPC.")
     print(" [PASS] Concurrency & double-booking protection: Dual GiST exclusion constraints and SLOT_ALREADY_BOOKED verified.")
 
-    # 8.8 Storage Bucket Non-Overwrite Invariant (Preserve Existing Bucket Configurations)
+    # 8.8 Storage Bucket Non-Overwrite & Comprehensive Verification Invariant
     if "ON CONFLICT (id) DO NOTHING;" not in consolidated_text:
         errors.append("Storage bucket configuration missing ON CONFLICT (id) DO NOTHING; (risk of overwriting existing bucket config).")
-    if "DO UPDATE SET" in consolidated_text and "public = false" in consolidated_text and "storage.buckets" in consolidated_text:
+    if re.search(r'INSERT\s+INTO\s+storage\.buckets[^;]+?ON\s+CONFLICT[^;]+?DO\s+UPDATE', consolidated_text, re.IGNORECASE):
         errors.append("Prohibited ON CONFLICT DO UPDATE SET found on storage.buckets. Must use DO NOTHING to preserve existing bucket settings.")
-    print(" [PASS] Storage bucket safety: Non-destructive ON CONFLICT (id) DO NOTHING and privacy assertion verified.")
+    if "v_bucket.file_size_limit IS DISTINCT FROM 10485760" not in consolidated_text:
+        errors.append("Storage bucket configuration missing file_size_limit verification assertion (10485760 bytes).")
+    if "v_expected_mimes" not in consolidated_text or "allowed_mime_types" not in consolidated_text:
+        errors.append("Storage bucket configuration missing allowed_mime_types allowlist verification assertion.")
+    print(" [PASS] Storage bucket safety: Non-destructive ON CONFLICT (id) DO NOTHING and full configuration verification (privacy, size limit, MIME types) verified.")
 
     # 8.9 Pre-Migration Constraint Conflict Safety Verification
     if "PRE-MIGRATION CONSTRAINT CONFLICT" not in consolidated_text:
