@@ -105,7 +105,8 @@ export interface DoctorProfile {
   slots: TimeSlot[]
   imageInitials: string  // e.g. "DR" for avatar fallback
   avatarBg: string       // tailwind bg class
-  isVerified: boolean
+  isApproved: boolean    // Canonical approval status matching database public.doctors.is_approved
+  isVerified: boolean    // Kept for UI backwards compatibility with Phase 1 mock data
   speaksHindi: boolean
   speaksKannada: boolean
 }

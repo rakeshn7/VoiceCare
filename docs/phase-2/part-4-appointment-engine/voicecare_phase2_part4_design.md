@@ -15,9 +15,9 @@ VoiceCare is a voice-first, multilingual healthcare appointment booking platform
 - **Part 2 (Approved):** Authentication, Role Architecture, Profiles, and Table-Level Row Level Security.
 - **Part 3 (Approved):** Private Supabase Storage Architecture for Doctor Verification Credentials (`doctor-docs`).
 - **Part 4 (Current Deliverable):** **Appointment Engine & Doctor Onboarding Transactional RPCs.**
-- **Part 5 (Future):** Administrator Verification Portal & Trusted Review Decision RPCs.
-- **Part 6 (Future):** Database-Triggered Webhooks & Real-Time Sync.
-- **Part 7 (Future):** Integrated Migration Orchestration, Production Deployment, and Verification.
+- **Part 5 (Approved):** Admin Review Dashboard & Doctor Verification Workflow.
+- **Part 6 (Future):** Audit Logging, Telemetry and Compliance.
+- **Part 7 (Future):** Integrated End-to-End Migration and Verification.
 
 ### 1.1 Scope of Part 4
 In Part 2, direct client `INSERT`, `UPDATE`, and `DELETE` privileges on `public.appointments`, `public.in_app_reminders`, `public.doctors`, and `public.doctor_verifications` were **explicitly revoked** from `PUBLIC`, `anon`, and `authenticated`. Part 4 provides the **strictly vetted, server-side `SECURITY DEFINER` Remote Procedure Calls (RPCs)** that govern all state mutations:

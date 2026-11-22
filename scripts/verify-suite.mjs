@@ -40,11 +40,16 @@ for (const spec of EXPECTED_SPECIALTIES) {
   assert(hasSpec, `Specialty "${spec}" is configured in SAMPLE_DOCTORS`)
 }
 
-// Check sample profile badge / isVerified
+// Check sample profile badge / isVerified & isApproved
 const verifiedCount = (doctorsSrc.match(/isVerified:\s*true/g) || []).length
 const falseVerifiedCount = (doctorsSrc.match(/isVerified:\s*false/g) || []).length
 assert(verifiedCount === 0, 'No doctor is marked isVerified: true (no fake verification claim)')
 assert(falseVerifiedCount >= 10, `All doctor profiles (${falseVerifiedCount}) explicitly have isVerified: false`)
+
+const approvedCount = (doctorsSrc.match(/isApproved:\s*true/g) || []).length
+const falseApprovedCount = (doctorsSrc.match(/isApproved:\s*false/g) || []).length
+assert(approvedCount === 0, 'No doctor is marked isApproved: true (canonical column alignment)')
+assert(falseApprovedCount >= 10, `All doctor profiles (${falseApprovedCount}) explicitly have canonical isApproved: false`)
 
 // Check unique doctor IDs
 const doctorIds = [...doctorsSrc.matchAll(/id:\s*'(dr-\d+)'/g)].map((m) => m[1])

@@ -60,11 +60,24 @@ In enterprise hospital operations or high-volume telemedicine platforms, multipl
 
 ---
 
-### 1.3 Document Audit Retention on Rejection
-When an application is rejected:
-- **Why Documents Are Not Deleted:** Under the Indian Digital Information Security in Healthcare Act (DISHA) principles and National Medical Commission (NMC) regulations, administrative decisions must maintain an immutable audit trail. If a fraudulent applicant submits forged credentials, deleting the uploaded documents upon rejection would destroy critical evidentiary records.
-- **Part 5 Contract:** Rejection updates `doctor_verifications.status = 'rejected'`, records the mandatory clinical/legal rejection reason, and keeps all associated records in `public.doctor_documents` intact.
-- **Contrast with Doctor-Initiated Deletions:** In Part 3, when a verified doctor explicitly deletes a document metadata row, database trigger `trg_doctor_documents_storage_cleanup` enqueues the file in `public.storage_deletion_queue` for physical removal. In Part 5 administrative rejection, no metadata row is deleted, so no physical storage deletion is enqueued.
+### 1.3 Document Retention on Rejection: Platform Policy vs. Regulatory Context
+
+When an application is rejected by an administrator:
+
+- **Implemented Platform Retention Policy:**
+  VoiceCare intentionally retains submitted document metadata in `public.doctor_documents` and keeps the physical files in the private `doctor-docs` storage bucket upon administrative rejection. The system does not enqueue them into `public.storage_deletion_queue`.
+  - **Evidentiary & Forensic Preservation:** Prevents fraudulent applicants from destroying evidence of forged medical registration numbers, altered certificates, or impersonation attempts.
+  - **Abuse Prevention:** Enables platform administrators to cross-reference subsequent re-applications against previously declined credentials and identify serial abuse.
+  - **Auditability:** Preserves the factual basis upon which the administrative review decision was made, maintaining the document set alongside the mandatory `admin_notes` (containing the clinical/credential rejection reason).
+
+- **Contrast with Doctor-Initiated Deletions (Part 3):**
+  In Part 3, when an active doctor explicitly deletes a document metadata row from their own profile, database trigger `trg_doctor_documents_storage_cleanup` enqueues the file in `public.storage_deletion_queue` for physical removal via the Storage API. In Part 5 administrative rejection, no database row is deleted; the verification record is simply transitioned to `status = 'rejected'`.
+
+- **Regulatory Landscape & Statutory Clarification:**
+  - **Draft DISHA Status:** The Digital Information Security in Healthcare Act (DISHA) was a 2018 draft bill released by the Ministry of Health and Family Welfare (MoHFW) for public comment and was never enacted into statutory law by Parliament. Therefore, it does not impose binding legal mandates.
+  - **Applicable Legal Framework:** Digital health operations and data processing in India are governed under the Information Technology Act, 2000 (and applicable 2011 Rules), the Digital Personal Data Protection Act, 2023 (DPDP Act 2023), and the National Medical Commission Act, 2019 (along with NMC Registered Medical Practitioner Conduct Regulations).
+  - **Balancing Fraud Prevention and Storage Limitation:** Under Section 8(7) of the DPDP Act 2023, data fiduciaries must erase personal data upon purpose completion unless retention is necessary for compliance with law or specified legal purposes. Retaining rejected applicant records is justified as a platform security and fraud-prevention measure, but must be governed by defined data retention and legal-hold schedules.
+  - **Roadmap Handover to Part 6:** Formalized retention schedules, periodic purge policies, legal hold mechanics, and regulatory compliance telemetry will be specified and codified in **Part 6 (Audit Logging, Telemetry and Compliance)**.
 
 ---
 
