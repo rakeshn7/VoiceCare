@@ -56,7 +56,7 @@ flowchart TD
 
 | Event Type | Triggering Source | Resource Type | Actor Role | Captured Metadata (Sanitized) | Excluded Data (Data Minimization) |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `doctor_application_submitted` | `public.doctor_verifications` (INSERT) | `doctor_verification` | `patient` / `system` | Doctor UUID, registration hash, issuing council, initial status | Bio text, personal phone, home address |
+| `doctor_application_submitted` | `public.doctor_verifications` (INSERT) | `doctor_verification` | `patient` / `system` | Doctor UUID, issuing council, initial status (registration number omitted for data minimization) | Bio text, raw/hashed registration number, phone |
 | `doctor_application_approved` | `public.doctor_verifications` (UPDATE) | `doctor_verification` | `admin` | Doctor UUID, old/new status, reviewer UUID, timestamp | Clinical credentials, degree certificates |
 | `doctor_application_rejected` | `public.doctor_verifications` (UPDATE) | `doctor_verification` | `admin` | Doctor UUID, old/new status, reviewer UUID, boolean `has_admin_notes` | Specific unredacted applicant private notes |
 | `doctor_application_suspended` | `public.doctor_verifications` (UPDATE) | `doctor_verification` | `admin` | Doctor UUID, old/new status, reviewer UUID | Private dispute correspondence |
@@ -146,15 +146,24 @@ flowchart LR
 
 ## 6. Administrative RPC Interfaces & Query Contracts
 
-All administrative functions enforce:
-1. `SECURITY DEFINER` with `SET search_path = pg_catalog`.
-2. Caller validation: `auth.uid() IS NOT NULL AND public.is_admin()`.
+Part 6 establishes **5 callable database RPC functions in total**:
+- **4 Administrative Query & Diagnostics RPCs** (prefixed with `admin_`, strictly verifying caller authentication and `public.is_admin() = true`, granted to `authenticated`):
+  1. `public.admin_list_audit_logs`
+  2. `public.admin_get_audit_stats`
+  3. `public.admin_list_telemetry_events`
+  4. `public.admin_get_telemetry_summary`
+- **1 Operational Telemetry Ingestion RPC** (callable by client applications and Edge Functions to report runtime errors and diagnostics securely without admin privileges):
+  5. `public.record_telemetry_event`
+
+All administrative query functions enforce:
+1. `SECURITY DEFINER` with fixed `SET search_path = pg_catalog`.
+2. Caller validation: `auth.uid() IS NOT NULL AND public.is_admin() = true`.
 3. Bounded pagination: `p_limit` bounded to 1–100 (default 50).
 
 ### 6.1 Function Signatures
 
 ```sql
--- 1. Paginated Audit Log Search & Filter
+-- 1. Paginated Audit Log Search & Filter (Admin-only)
 public.admin_list_audit_logs(
     p_event_type TEXT DEFAULT NULL,
     p_actor_id UUID DEFAULT NULL,
@@ -166,12 +175,12 @@ public.admin_list_audit_logs(
     p_offset INT DEFAULT 0
 ) RETURNS JSONB;
 
--- 2. Audit Event Aggregation & Volume Distribution
+-- 2. Audit Event Aggregation & Volume Distribution (Admin-only)
 public.admin_get_audit_stats(
     p_timeframe_days INT DEFAULT 30
 ) RETURNS JSONB;
 
--- 3. Operational Telemetry & Error Query
+-- 3. Operational Telemetry & Error Query (Admin-only)
 public.admin_list_telemetry_events(
     p_severity TEXT DEFAULT NULL,
     p_component TEXT DEFAULT NULL,
@@ -180,11 +189,11 @@ public.admin_list_telemetry_events(
     p_offset INT DEFAULT 0
 ) RETURNS JSONB;
 
--- 4. 24-Hour Operational Health Diagnostics
+-- 4. 24-Hour Operational Health Diagnostics (Admin-only)
 public.admin_get_telemetry_summary()
 RETURNS JSONB;
 
--- 5. Client & Edge Function Telemetry Ingestion
+-- 5. Client & Edge Function Telemetry Ingestion (Operational)
 public.record_telemetry_event(
     p_component TEXT,
     p_event_name TEXT,
@@ -198,28 +207,34 @@ public.record_telemetry_event(
 
 ## 7. Retention & Purging Policy Framework
 
-A critical requirement of Part 6 is to **clearly distinguish statutory obligations from internal product retention policies**.
+A critical requirement of Part 6 is to **rigorously distinguish verified statutory legal obligations from internal platform engineering policies**, and to avoid claiming that general legal rules automatically prescribe specific retention durations for every VoiceCare record.
 
-### 7.1 Statutory Obligations (Governing Laws in India)
+### 7.1 Analysis of Statutory Obligations in India
 
-| Regulation / Directive | Authority | Legal Mandate | Platform Application |
-| :--- | :--- | :--- | :--- |
-| **CERT-In Cyber Security Directions (April 2022)** | Indian Computer Emergency Response Team (MeitY) | Direction No. 20(3)/2022-CERT-In mandates that all intermediaries, service providers, and data centres **maintain ICT system logs for a rolling period of 180 days** within Indian jurisdiction. | System and access logs must be preserved for at least 180 days. Deleting system logs before 180 days is a regulatory violation. |
-| **Digital Personal Data Protection Act, 2023 (DPDP Act)** | Parliament of India | **Section 8(7):** Data fiduciaries must erase personal data upon purpose completion or withdrawal of consent, **unless retention is necessary for compliance with any law**. | Audit logs must adhere to data minimization. They cannot store unneeded personal data (such as symptoms) and must have finite retention schedules. |
-| **Information Technology Act, 2000 & 2011 SPDI Rules** | Ministry of Electronics & IT (MeitY) | Reasonable security practices and access audit procedures must be maintained for sensitive personal data or information (SPDI). | Access to medical credentials and administrative reviews must maintain non-repudiable logs. |
-| **NMC Registered Medical Practitioner Regulations** | National Medical Commission (NMC) | Registered medical practitioners are required to maintain medical consultation records for **3 years** from commencement of treatment. | While the doctor bears this obligation, the platform's appointment booking metadata provides the verifying audit trail for consultations. |
+| Statutory Reference | Direct Scope & Applicability | Distinction from Application Audit Logs |
+| :--- | :--- | :--- |
+| **CERT-In Cyber Security Directions (April 28, 2022, Direction No. 20(3)/2022-CERT-In)** | Mandates intermediaries, data centers, and body corporate maintain **ICT system logs** (e.g. firewall, server access, database connection logs, login/logout timestamps) for a rolling **180-day period** within Indian jurisdiction. | **Technical System Logs Only:** This directive governs infrastructure and access logs for cybersecurity incident response. It does **not** mandate that application-level business/clinical workflow records (such as rescheduling an appointment or changing consultation fees) must be kept for 180 days. Infrastructure logs are maintained at the hosting/Supabase network layer. |
+| **Digital Personal Data Protection Act, 2023 (DPDP Act 2023)** | Section 8(7) mandates that data fiduciaries must erase personal data as soon as the purpose for which it was collected is no longer served, **unless retention is necessary for compliance with any law**. | **Storage Limitation & Data Minimization:** The DPDP Act does **not** specify a fixed number of days, months, or years for retention. Subordinate operational rules under Section 40 remain pending notification. Retaining audit records without a legally justifiable purpose could conflict with statutory storage limitation. |
+| **NMC / Indian Medical Council Ethics Regulations (2002 / 2023)** | Regulation 1.3 requires **registered medical practitioners (doctors) and hospitals** to maintain inpatient and outpatient medical consultation records for a period of **3 years** from commencement of treatment. | **Duty of the Practitioner, Not the Platform:** VoiceCare is a technology facilitator and appointment scheduling platform, not a licensed clinic or hospital. The direct statutory duty falls upon the doctor. Retaining appointment metadata for up to 3 years is an internal platform policy designed to assist practitioners and support dispute resolution, rather than a direct NMC mandate binding the platform. |
 
-### 7.2 Internal Platform Policies (Engineering & Risk Management)
+### 7.2 Internal Platform Policies (Engineering & Risk Decisions)
 
-These policies represent internal operational decisions by VoiceCare engineering and are **not** direct statutory mandates:
+The following retention schedules represent **VoiceCare internal operational policies** and must not be described as statutory mandates:
 
 1. **Audit Logs (`public.audit_logs`):**
-   - **Active Hot Storage:** Retained in PostgreSQL for **365 days (1 year)** to support administrative disputes, billing queries, and fraud investigations.
-   - **Cold Archive Storage:** After 365 days, records may be exported to encrypted cold storage (e.g. Google Cloud Storage Archive or AWS S3 Glacier) for an additional **2 years (total 3-year retention)** to mirror NMC consultation record periods.
+   - **Active Hot Storage (PostgreSQL):** Retained for **365 days (1 year)** to support administrative reviews, billing disputes, and fraud prevention.
+   - **Cold Archive Storage:** After 365 days, audit records may be moved to encrypted cold archive storage for an additional **2 years (total 3-year lifecycle)** to mirror medical dispute timelines.
 2. **Operational Telemetry (`public.operational_telemetry`):**
-   - Retained for **90 days** in hot storage, after which transient debug traces and performance warnings are automatically purged.
+   - Retained for **90 days** in hot storage, after which transient component errors, performance metrics, and client crash traces are automatically purged.
 3. **Legal Hold Mechanics:**
-   - Any audit record associated with an active medical council dispute, fraud investigation, or formal legal inquiry is placed on **Legal Hold**, exempting it from automated purging schedules until formal closure.
+   - Any audit record linked to an ongoing legal proceeding, medical council inquiry, or fraud dispute is placed on **Legal Hold**, exempting it from automated purging until formal resolution.
+
+### 7.3 Items Requiring Formal Legal Review
+
+Prior to production launch, VoiceCare management must obtain formal legal counsel review regarding:
+- The precise classification of VoiceCare as an "intermediary" under IT Act Section 2(1)(w) vs. a "Data Fiduciary" under DPDP Act 2023.
+- Approval of the formalized data retention schedule and legal-hold SOP under forthcoming DPDP subordinate rules.
+- Policy alignment regarding patient "Right to Erasure" requests vs. non-repudiable audit retention.
 
 ---
 
@@ -229,7 +244,7 @@ Part 6 SQL contains automated verification blocks confirming:
 1. Tables `public.audit_logs` and `public.operational_telemetry` exist with valid primary keys and check constraints.
 2. Immutability triggers `trg_audit_logs_immutability` and `trg_telemetry_immutability` are active.
 3. Automated triggers are bound to `doctor_verifications`, `appointments`, `doctor_documents`, and `profiles`.
-4. All 5 public RPCs exist, are owned by `postgres`, and enforce `SECURITY DEFINER` with `search_path = pg_catalog`.
+4. All 5 public RPCs (4 admin query RPCs + 1 operational ingestion RPC) exist, are owned by `postgres`, and enforce `SECURITY DEFINER` with `search_path = pg_catalog`.
 5. Post-migration DO $$ block confirms system readiness.
 
 **Hand-off to Part 7:**

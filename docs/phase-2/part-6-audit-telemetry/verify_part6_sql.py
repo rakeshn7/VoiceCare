@@ -135,7 +135,7 @@ def run_verification() -> bool:
             admin_guards_ok = False
 
     if admin_guards_ok:
-        print(f" [PASS 5/9] Authorization guards check: All {len(admin_rpcs)} admin RPCs enforce authenticated session and is_admin().")
+        print(f" [PASS 5/9] Authorization guards check: All {len(admin_rpcs)} admin RPCs enforce authenticated session and is_admin() (plus 1 operational telemetry ingestion RPC).")
 
     # 6. Immutability Protection Check
     immutability_ok = True
@@ -159,8 +159,13 @@ def run_verification() -> bool:
         if sf not in content:
             errors.append(f"Data minimization sanitizer missing exclusion for: '{sf}'")
             data_min_ok = False
+
+    if "md5(NEW.registration_number)" in content:
+        errors.append("Prohibited weak MD5 hash on registration_number found. Registration numbers must be omitted from audit metadata for data minimization.")
+        data_min_ok = False
+
     if data_min_ok:
-        print(" [PASS 7/9] Data minimization check: Explicit exclusion of patient symptoms, clinical notes, and credentials confirmed.")
+        print(" [PASS 7/9] Data minimization check: Exclusion of patient symptoms, clinical notes, credentials, and weak MD5 registration hashes confirmed.")
 
     # 8. Preflight Assertions Check
     preflight_checks = [

@@ -305,6 +305,9 @@ BEGIN
     END IF;
 
     IF TG_OP = 'INSERT' THEN
+        -- Record application submission with data minimization.
+        -- Medical registration number is omitted from audit metadata to avoid weak unkeyed hashing (MD5).
+        -- The authoritative credential remains securely in public.doctor_verifications (accessible via resource_id).
         PERFORM public.record_audit_log_internal(
             'doctor_application_submitted',
             COALESCE(v_actor_id, NEW.doctor_id),
@@ -316,7 +319,6 @@ BEGIN
             jsonb_build_object(
                 'doctor_id', NEW.doctor_id,
                 'status', NEW.status,
-                'registration_number_hash', md5(NEW.registration_number),
                 'issuing_authority', NEW.issuing_authority
             )
         );
@@ -589,6 +591,15 @@ CREATE TRIGGER trg_audit_profile_role
 
 -- =============================================================================
 -- SECTION 7: OPERATIONAL & ADMINISTRATIVE RPC INTERFACES
+-- =============================================================================
+-- Part 6 provides 5 callable RPC functions in total:
+--   1. Operational Telemetry Ingestion RPC (callable by clients/edge functions):
+--      - public.record_telemetry_event
+--   2. Four Administrative Query & Telemetry RPCs (strictly gated to is_admin):
+--      - public.admin_list_audit_logs
+--      - public.admin_get_audit_stats
+--      - public.admin_list_telemetry_events
+--      - public.admin_get_telemetry_summary
 -- =============================================================================
 
 -- -----------------------------------------------------------------------------

@@ -44,7 +44,7 @@ In healthcare systems, audit logs often become an inadvertent compliance hazard 
          'signed_url', 'view_url'
      ];
      ```
-  3. **Credential Hashing:** For doctor applications, the medical registration number is hashed via `md5()` in the audit payload, verifying application identity without exposing raw license numbers in audit search indexes.
+  3. **Data Minimization of Registration Numbers:** For doctor applications, the medical registration number was evaluated for pseudonymization. Standard `md5()` was evaluated and rejected because medical registration numbers (typically 5 to 7 digits) have low entropy and are vulnerable to offline brute-force and precomputed rainbow table attacks. Keyed HMAC (`hmac(registration_number, secret, 'sha256')`) would require storing a server-side pepper/secret within database trigger context; since an external KMS or Supabase Vault integration is not yet configured for database triggers in Part 6, hardcoding a secret in SQL or environment variables would risk secret exposure. Therefore, applying the DPDP Act 2023 principle of privacy-by-design and data minimization, registration numbers are **strictly omitted** from the audit payload. The raw credential remains securely stored in `public.doctor_verifications` where authorized administrators can review it via the linked `resource_id` (`doctor_id`).
 
 ---
 
@@ -100,26 +100,28 @@ A core requirement is to clearly distinguish binding Indian legal mandates from 
 ```mermaid
 flowchart TD
     subgraph Statutory["Statutory Legal Obligations (Binding in India)"]
-        S1["CERT-In 2022 Directives<br/>• Mandates 180-day ICT system log retention<br/>• Applicable to all service providers in India"]
-        S2["DPDP Act 2023 Sec 8(7)<br/>• Storage limitation & data minimization<br/>• Erase data when purpose is fulfilled"]
-        S3["NMC Regulations<br/>• 3-year medical consultation record retention<br/>• Primary duty of registered practitioner"]
+        S1["CERT-In 2022 Directives<br/>• Mandates 180-day ICT system & access log retention<br/>• Applicable to infrastructure/access logs in India"]
+        S2["DPDP Act 2023 Sec 8(7)<br/>• Storage limitation & data minimization<br/>• Erase data when purpose is fulfilled (rules pending)"]
+        S3["NMC Regulations<br/>• 3-year medical consultation record retention<br/>• Direct duty of registered medical practitioner/hospital"]
     end
 
-    subgraph InternalPolicy["VoiceCare Platform Retention Policy (Internal)"]
+    subgraph InternalPolicy["VoiceCare Platform Retention Policy (Internal Engineering Decisions)"]
         P1["public.audit_logs<br/>• 365 Days: PostgreSQL Hot Storage<br/>• Years 2–3: Encrypted Cold Storage Archive<br/>• Legal Hold: Indefinite retention for disputed events"]
         P2["public.operational_telemetry<br/>• 90 Days: PostgreSQL Hot Storage<br/>• Automatic periodic purging of transient diagnostics"]
     end
 
-    S1 -.->|Establishes Legal Minimum 180d| P1
+    S1 -.->|Governs Network/Access Logs; Guides Audit Baseline| P1
     S2 -.->|Mandates Finite Retention & Minimization| P1
     S2 -.->|Mandates Purging of Obsolete Traces| P2
-    S3 -.->|Guides 3-Year Consultation Audit Trail| P1
+    S3 -.->|Guides Clinical Audit Baseline to Assist Doctors| P1
 ```
 
 ### Statutory Comparison Summary:
-1. **CERT-In Directions (April 2022):** Legally mandates **180 days** retention of ICT system logs. VoiceCare's 365-day hot retention fully complies with this legal minimum.
-2. **DPDP Act, 2023:** Mandates that personal data not be kept longer than necessary for its processed purpose. Retaining audit records beyond necessary dispute resolution periods without legal hold would violate storage limitation principles.
-3. **Internal Policy:** The distinction between 365-day hot storage and 90-day telemetry purging is an internal operational policy designed by VoiceCare to balance query performance, database storage costs, and forensic readiness.
+1. **CERT-In Cyber Security Directions (April 2022, Direction 20(3)/2022-CERT-In):** Legally mandates **180-day retention of ICT system logs** (firewall, network traffic, database connection, and login/logout access logs). This applies strictly to infrastructure-level technical logs, not as a blanket statutory mandate for application business/clinical workflow records (such as fee updates or appointment rescheduling). Infrastructure logs are managed at the hosting/network layer.
+2. **DPDP Act, 2023 (Section 8(7)):** Establishes the principle of storage limitation and data minimization—data fiduciaries must erase personal data once the purpose of collection is fulfilled unless retention is legally required. The DPDP Act **does not specify a fixed number of days, months, or years** for log retention; subordinate operational rules under Section 40 remain pending notification.
+3. **NMC Regulations (2002 / 2023):** Regulation 1.3 obligates **registered medical practitioners and hospitals** to maintain patient consultation records for 3 years. This statutory duty falls directly on the doctor, not on VoiceCare as a software intermediary. VoiceCare aligns its 3-year audit archive policy to support practitioners and facilitate dispute resolution.
+4. **Internal Platform Policy:** The distinction between 365-day hot storage for audit logs, 90-day purging for telemetry, and 2-year cold archiving is an **internal operational engineering decision** by VoiceCare to balance query performance, database storage costs, and forensic readiness.
+5. **Items Requiring Formal Legal Review:** Prior to production launch, VoiceCare legal counsel must formally review: (a) intermediary classification under IT Act Sec 2(1)(w) vs. Data Fiduciary under DPDP Act 2023; (b) data retention schedule under forthcoming DPDP subordinate rules; and (c) interplay between patient Right to Erasure and non-repudiable audit logs.
 
 ---
 
