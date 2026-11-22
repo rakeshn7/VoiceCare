@@ -15,16 +15,16 @@ This directory contains the database design artifacts, SQL migration specificati
 **VoiceCare** is an AI-assisted, multilingual, voice-first healthcare appointment booking application engineered for India's diverse linguistic and clinical landscape.
 
 - **Phase 1 (Complete):** High-fidelity multilingual frontend prototype supporting real-time voice workflows, doctor discovery, slot selection, and appointment confirmations.
-- **Phase 2 (In Development):** Comprehensive backend data layer on **Supabase** (PostgreSQL 15+, Supabase Auth, Supabase Storage, and PostgREST Data API), divided into seven modular parts:
+- **Phase 2 (Completed):** Comprehensive backend data layer on **Supabase** (PostgreSQL 15+, Supabase Auth, Supabase Storage, and PostgREST Data API), divided into seven modular parts:
   - **Part 1:** Core Database Foundation *(included)*
   - **Part 2:** Authentication and Roles *(included)*
   - **Part 3:** Supabase Storage and Doctor Verification Documents *(included)*
   - **Part 4:** Appointment Engine and Doctor Onboarding RPCs *(included)*
   - **Part 5:** Admin Review Dashboard & Verification Workflows *(included)*
   - **Part 6:** Audit Logging, Telemetry and Compliance *(included)*
-  - **Part 7:** Integrated End-to-End Migration and Verification *(upcoming)*
+  - **Part 7:** Integrated End-to-End Migration and Verification *(included)*
 
-This branch (`phase-2-review`) publishes **Parts 1 through 6** for architectural review and security auditing.
+This branch (`phase-2-review`) publishes **Parts 1 through 7** for architectural review and security auditing.
 
 ---
 
@@ -35,7 +35,7 @@ The review files are organized modularly:
 ```text
 docs/phase-2/
 ├── README.md                                    # This review overview document
-├── verify_all_phase2.py                         # Master static verification suite for Parts 1–4
+├── verify_all_phase2.py                         # Master static verification suite for Parts 1–7
 │
 ├── part-1-database-foundation/
 │   ├── voicecare_part1_database.sql             # Schema DDL, constraints, domains, indexes
@@ -50,16 +50,16 @@ docs/phase-2/
 ├── part-3-storage-verification/
 │   ├── voicecare_phase2_part3_storage.sql       # Private bucket setup, storage RLS, cleanup queue
 │   ├── voicecare_phase2_part3_design.md         # Document storage architecture & access controls
-│   ├── voicecare_phase2_part3_notes.md          # Storage security analysis & fail-closed preflight
+│   └── voicecare_phase2_part3_notes.md          # Storage security analysis & fail-closed preflight
 │   ├── verify_storage_sql.py                    # Static verification script for Part 3 SQL
 │   ├── test_exclusion.py                        # Assertion 6 policy exclusion evaluator
 │   └── test_policy_simulation.py                # Storage RLS policy safety simulator
 │
-└── part-4-appointment-engine/
-    ├── voicecare_phase2_part4_rpc.sql           # 10 transactional SECURITY DEFINER RPCs
-    ├── voicecare_phase2_part4_design.md         # Appointment lifecycle & onboarding engine design
-    ├── voicecare_phase2_part4_notes.md          # Concurrency locking, quota, & error code specs
-    └── verify_part4_sql.py                      # Comprehensive verification suite for Part 4 SQL
+├── part-4-appointment-engine/
+│   ├── voicecare_phase2_part4_rpc.sql           # 10 transactional SECURITY DEFINER RPCs
+│   ├── voicecare_phase2_part4_design.md         # Appointment lifecycle & onboarding engine design
+│   ├── voicecare_phase2_part4_notes.md          # Concurrency locking, quota, & error code specs
+│   └── verify_part4_sql.py                      # Comprehensive verification suite for Part 4 SQL
 │
 ├── part-5-admin-review/
 │   ├── voicecare_phase2_part5_admin_review.sql  # 4 administrative review, listing & stats RPCs
@@ -67,11 +67,19 @@ docs/phase-2/
 │   ├── voicecare_phase2_part5_notes.md          # Concurrency row-locking, audit trails & RLS notes
 │   └── verify_part5_sql.py                      # Static verification suite for Part 5 SQL
 │
-└── part-6-audit-telemetry/
-    ├── voicecare_phase2_part6_audit.sql         # Append-only audit logs, telemetry & immutability triggers
-    ├── voicecare_phase2_part6_design.md         # Audit taxonomy, data minimization & compliance design
-    ├── voicecare_phase2_part6_notes.md          # Threat model, statutory vs policy analysis & RLS notes
-    └── verify_part6_sql.py                      # Static verification suite for Part 6 SQL
+├── part-6-audit-telemetry/
+│   ├── voicecare_phase2_part6_audit.sql         # Append-only audit logs, telemetry & immutability triggers
+│   ├── voicecare_phase2_part6_design.md         # Audit taxonomy, data minimization & compliance design
+│   ├── voicecare_phase2_part6_notes.md          # Threat model, statutory vs policy analysis & RLS notes
+│   └── verify_part6_sql.py                      # Static verification suite for Part 6 SQL
+│
+└── part-7-integrated-migration/
+    ├── voicecare_phase2_consolidated_migration.sql # Master atomic consolidated migration script (5,792 lines)
+    ├── voicecare_phase2_migration_guide.md      # Dependency DAG & execution guide
+    ├── voicecare_phase2_part7_security_audit.md # Cross-part security & permissions audit
+    ├── voicecare_phase2_supabase_checklist.md   # Supabase deployment & execution checklist
+    ├── voicecare_phase2_completion_report.md    # Final Phase 2 completion report & sign-off
+    └── verify_part7_e2e.py                      # Integrated end-to-end verification suite
 ```
 
 ---
@@ -150,6 +158,7 @@ flowchart LR
     P3 --> P4["Part 4: Appointment Engine<br/>(Transactional RPCs & Locking)"]
     P4 --> P5["Part 5: Admin Review<br/>(Doctor Adjudication & Dashboard)"]
     P5 --> P6["Part 6: Audit & Telemetry<br/>(Immutable Logs & Minimization)"]
+    P6 --> P7["Part 7: Integrated Migration<br/>(Consolidated Script & E2E Verification)"]
 ```
 
 1. **Part 1** establishes the tables and foreign keys required by Part 2.
@@ -158,6 +167,7 @@ flowchart LR
 4. **Part 4** coordinates transactions across all underlying tables and storage objects.
 5. **Part 5** establishes administrative adjudication, role promotion from patient to doctor, and document review.
 6. **Part 6** attaches automated audit triggers across clinical and onboarding tables, guaranteeing non-repudiation.
+7. **Part 7** consolidates all components into an atomic, dependency-aware migration orchestrator (`voicecare_phase2_consolidated_migration.sql`) and end-to-end verification suite.
 
 ---
 
@@ -207,7 +217,7 @@ During the Phase 2 audit, the following cross-part interactions were identified,
 To verify all Phase 2 files locally, run the master verification script using Python 3:
 
 ```bash
-# Run the complete Phase 2 verification suite (Parts 1 to 6)
+# Run the complete Phase 2 master verification suite (Parts 1 to 7)
 python docs/phase-2/verify_all_phase2.py
 
 # Or run individual part verification scripts:
@@ -215,6 +225,7 @@ python docs/phase-2/part-3-storage-verification/verify_storage_sql.py
 python docs/phase-2/part-4-appointment-engine/verify_part4_sql.py
 python docs/phase-2/part-5-admin-review/verify_part5_sql.py
 python docs/phase-2/part-6-audit-telemetry/verify_part6_sql.py
+python docs/phase-2/part-7-integrated-migration/verify_part7_e2e.py
 ```
 
 All verification suites exit with code `0` on success and print itemized results for every security assertion.

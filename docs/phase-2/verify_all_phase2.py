@@ -20,12 +20,14 @@ PART3_DIR = CURRENT_DIR / "part-3-storage-verification"
 PART4_DIR = CURRENT_DIR / "part-4-appointment-engine"
 PART5_DIR = CURRENT_DIR / "part-5-admin-review"
 PART6_DIR = CURRENT_DIR / "part-6-audit-telemetry"
+PART7_DIR = CURRENT_DIR / "part-7-integrated-migration"
 FUNCTIONS_DIR = PROJECT_ROOT / "supabase" / "functions"
 
 sys.path.insert(0, str(PART3_DIR))
 sys.path.insert(0, str(PART4_DIR))
 sys.path.insert(0, str(PART5_DIR))
 sys.path.insert(0, str(PART6_DIR))
+sys.path.insert(0, str(PART7_DIR))
 
 def strip_sql_comments(sql: str) -> str:
     sql_no_block = re.sub(r'/\*.*?\*/', '', sql, flags=re.DOTALL)
@@ -38,7 +40,7 @@ def file_hash(path: Path) -> str:
 
 def run_suite() -> bool:
     print("=" * 80)
-    print("VOICECARE PHASE 2: MASTER STATIC VERIFICATION SUITE (PARTS 1 - 6)")
+    print("VOICECARE PHASE 2: MASTER STATIC VERIFICATION SUITE (PARTS 1 - 7)")
     print("=" * 80)
     
     errors = []
@@ -70,6 +72,12 @@ def run_suite() -> bool:
         (PART6_DIR / "voicecare_phase2_part6_design.md", "Part 6 Design"),
         (PART6_DIR / "voicecare_phase2_part6_notes.md", "Part 6 Notes"),
         (PART6_DIR / "verify_part6_sql.py", "Part 6 Verification Script"),
+        (PART7_DIR / "voicecare_phase2_consolidated_migration.sql", "Part 7 Consolidated SQL"),
+        (PART7_DIR / "voicecare_phase2_migration_guide.md", "Part 7 Migration Guide"),
+        (PART7_DIR / "voicecare_phase2_part7_security_audit.md", "Part 7 Security Audit"),
+        (PART7_DIR / "voicecare_phase2_supabase_checklist.md", "Part 7 Supabase Checklist"),
+        (PART7_DIR / "voicecare_phase2_completion_report.md", "Part 7 Completion Report"),
+        (PART7_DIR / "verify_part7_e2e.py", "Part 7 Verification Script"),
         (FUNCTIONS_DIR / "create-doctor-upload-url" / "index.ts", "Edge Function: create-doctor-upload-url"),
         (FUNCTIONS_DIR / "create-doctor-document-view-url" / "index.ts", "Edge Function: create-doctor-document-view-url"),
         (FUNCTIONS_DIR / "cleanup-storage-queue" / "index.ts", "Edge Function: cleanup-storage-queue"),
@@ -313,6 +321,18 @@ def run_suite() -> bool:
     else:
         print(" [PASS] Part 3 Storage Ownership: Prospective applicants (role = 'patient') permitted for their own folder.")
 
+    # -------------------------------------------------------------------------
+    # SUITE CHECK 11: Part 7 Integrated End-to-End Migration Audit
+    # -------------------------------------------------------------------------
+    print("\n--- [SUITE CHECK 11] PART 7 INTEGRATED END-TO-END MIGRATION AUDIT ---")
+    try:
+        import verify_part7_e2e
+        p7_success = verify_part7_e2e.run_e2e_verification()
+        if not p7_success:
+            errors.append("Part 7 integrated verification reported failures.")
+    except Exception as ex:
+        errors.append(f"Failed to execute Part 7 verification script: {ex}")
+
     if errors:
         print("\n" + "=" * 80)
         print("MASTER SUITE ENCOUNTERED ERRORS:")
@@ -322,7 +342,7 @@ def run_suite() -> bool:
         return False
 
     print("\n" + "=" * 80)
-    print(">>> MASTER VERIFICATION SUCCESSFUL: ALL 6 PARTS VERIFIED WITH ZERO ERRORS! <<<")
+    print(">>> MASTER VERIFICATION SUCCESSFUL: ALL 7 PARTS VERIFIED WITH ZERO ERRORS! <<<")
     print("=" * 80)
     return True
 

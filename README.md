@@ -86,5 +86,20 @@ node scripts/verify-suite.mjs
 
 ---
 
-## 📌 Phase 1 Milestone
-This repository contains the completed, tested Phase 1 frontend prototype, tagged as `phase-1-prototype`.
+## 📌 Project Milestones & Roadmap
+
+- **Phase 1 (Complete):** High-fidelity multilingual frontend prototype supporting real-time voice workflows, doctor discovery, slot selection, and appointment confirmations. (Tagged as `phase-1-prototype`).
+- **Phase 2 (Completed on `phase-2-review`):** Comprehensive Supabase PostgreSQL 15+ backend architecture, authentication lifecycle, private medical document storage, appointment booking engine, admin adjudication dashboard, tamper-resistant audit logging, and consolidated end-to-end migration pipeline.
+  - **Part 1:** Core Database Foundation (9 relational tables, 4 custom enums, dual GiST exclusion constraints).
+  - **Part 2:** Authentication, RBAC & Directory Views (10 auth functions, 19 RLS policies, 3 public directory views).
+  - **Part 3:** Supabase Storage & Verification Documents (Private `doctor-docs` bucket, 4 storage RLS policies, async deletion queue, 3 Edge Functions).
+  - **Part 4:** Appointment Engine & Doctor Onboarding (10 transactional `SECURITY DEFINER` RPCs, 25-document quota lock, explicit `REVOKE INSERT` on `doctor_documents`).
+  - **Part 5:** Admin Review Dashboard & State Machine (4 administrative review and stats RPCs, status transitions, role promotion, React review UI).
+  - **Part 6:** Audit Logging, Immutability & Telemetry (Append-only `audit_logs` & `operational_telemetry` tables, `IMMUTABLE_AUDIT_RECORD` triggers, data minimization, 5 callable RPCs).
+  - **Part 7:** Integrated End-to-End Migration & Verification (Atomic 5,792-line consolidated migration script, migration execution guide, security audit, Supabase deployment checklist, and master verification suite).
+
+### Verification
+```bash
+# Run master database verification suite (Parts 1 to 7)
+python docs/phase-2/verify_all_phase2.py
+```
