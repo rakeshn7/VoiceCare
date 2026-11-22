@@ -316,6 +316,28 @@ CREATE TABLE IF NOT EXISTS public.doctor_schedules (
 );
 
 -- Exclusion constraint: prevents overlapping active shifts for the same doctor on the same day
+-- Explicit safety check: Assert no conflicting active doctor schedules exist before replacing constraint
+DO $$
+DECLARE
+    v_conflicts INT := 0;
+BEGIN
+    SELECT COUNT(*) INTO v_conflicts
+    FROM public.doctor_schedules s1
+    JOIN public.doctor_schedules s2
+        ON s1.doctor_id = s2.doctor_id
+       AND s1.day_of_week = s2.day_of_week
+       AND s1.id <> s2.id
+       AND s1.is_active = true
+       AND s2.is_active = true
+       AND tsrange(('2000-01-01'::date + s1.start_time), ('2000-01-01'::date + s1.end_time), '[)') &&
+           tsrange(('2000-01-01'::date + s2.start_time), ('2000-01-01'::date + s2.end_time), '[)');
+
+    IF v_conflicts > 0 THEN
+        RAISE EXCEPTION 'PRE-MIGRATION CONSTRAINT CONFLICT: Found % overlapping active doctor schedule rows in public.doctor_schedules. Resolve overlapping shifts before applying uq_doctor_schedules_no_overlap.', v_conflicts;
+    END IF;
+END;
+$$;
+
 ALTER TABLE public.doctor_schedules
     DROP CONSTRAINT IF EXISTS uq_doctor_schedules_no_overlap;
 
@@ -412,6 +434,45 @@ CREATE TABLE IF NOT EXISTS public.appointments (
     CONSTRAINT uq_appointments_id_patient_id
         UNIQUE (id, patient_id)
 );
+
+-- Exclusion constraints: Prevent doctor and patient double-booking
+-- Explicit safety check: Assert no conflicting appointments exist before replacing constraints
+DO $$
+DECLARE
+    v_doctor_conflicts INT := 0;
+    v_patient_conflicts INT := 0;
+BEGIN
+    -- Check for overlapping doctor appointments
+    SELECT COUNT(*) INTO v_doctor_conflicts
+    FROM public.appointments a1
+    JOIN public.appointments a2
+        ON a1.doctor_id = a2.doctor_id
+       AND a1.id <> a2.id
+       AND a1.status IN ('pending', 'confirmed')
+       AND a2.status IN ('pending', 'confirmed')
+       AND tsrange((a1.appointment_date + a1.appointment_time)::timestamp, (a1.appointment_date + a1.end_time)::timestamp, '[)') &&
+           tsrange((a2.appointment_date + a2.appointment_time)::timestamp, (a2.appointment_date + a2.end_time)::timestamp, '[)');
+
+    IF v_doctor_conflicts > 0 THEN
+        RAISE EXCEPTION 'PRE-MIGRATION CONSTRAINT CONFLICT: Found % overlapping doctor appointments (pending/confirmed) in public.appointments. Resolve doctor double-bookings before applying uq_doctor_no_appointment_overlap.', v_doctor_conflicts;
+    END IF;
+
+    -- Check for overlapping patient appointments
+    SELECT COUNT(*) INTO v_patient_conflicts
+    FROM public.appointments a1
+    JOIN public.appointments a2
+        ON a1.patient_id = a2.patient_id
+       AND a1.id <> a2.id
+       AND a1.status IN ('pending', 'confirmed')
+       AND a2.status IN ('pending', 'confirmed')
+       AND tsrange((a1.appointment_date + a1.appointment_time)::timestamp, (a1.appointment_date + a1.end_time)::timestamp, '[)') &&
+           tsrange((a2.appointment_date + a2.appointment_time)::timestamp, (a2.appointment_date + a2.end_time)::timestamp, '[)');
+
+    IF v_patient_conflicts > 0 THEN
+        RAISE EXCEPTION 'PRE-MIGRATION CONSTRAINT CONFLICT: Found % overlapping patient appointments (pending/confirmed) in public.appointments. Resolve patient double-bookings before applying uq_patient_no_appointment_overlap.', v_patient_conflicts;
+    END IF;
+END;
+$$;
 
 -- Exclusion constraint 1: Prevent doctor double-booking
 ALTER TABLE public.appointments

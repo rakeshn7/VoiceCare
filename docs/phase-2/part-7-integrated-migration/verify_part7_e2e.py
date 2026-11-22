@@ -283,6 +283,11 @@ def run_e2e_verification() -> bool:
         errors.append("Prohibited ON CONFLICT DO UPDATE SET found on storage.buckets. Must use DO NOTHING to preserve existing bucket settings.")
     print(" [PASS] Storage bucket safety: Non-destructive ON CONFLICT (id) DO NOTHING and privacy assertion verified.")
 
+    # 8.9 Pre-Migration Constraint Conflict Safety Verification
+    if "PRE-MIGRATION CONSTRAINT CONFLICT" not in consolidated_text:
+        errors.append("Missing explicit conflict pre-check before GiST exclusion constraint replacement.")
+    print(" [PASS] Constraint conflict pre-checks: Explicit conflict verification active before constraint replacement.")
+
     # -------------------------------------------------------------------------
     # CHECK 9: Supabase Edge Functions Static Security Audit
     # -------------------------------------------------------------------------

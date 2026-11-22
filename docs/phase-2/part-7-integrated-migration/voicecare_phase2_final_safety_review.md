@@ -3,7 +3,7 @@
 **Document:** `voicecare_phase2_final_safety_review.md`  
 **Target Migration:** `docs/phase-2/part-7-integrated-migration/voicecare_phase2_consolidated_migration.sql`  
 **Working Branch:** `phase-2-review`  
-**Commit:** `5f59b7c`  
+**Latest Reviewed Commit:** `6785313`  
 **Review Date:** 2026-11-22  
 
 ---
@@ -12,7 +12,7 @@
 
 | Environment | Recommendation | Pre-Conditions & Rationale |
 | :--- | :---: | :--- |
-| **Clean Supabase Staging Sandbox** | **GO** | All 10 static, structural, AST, and token verification suites passed with zero errors. The consolidated migration runs inside an atomic transaction (`BEGIN ... COMMIT`) with fail-closed preflight assertions and automated post-migration integrity verification. Zero destructive operations (`DROP TABLE`, `TRUNCATE`, `DELETE`) exist. |
+| **Clean Supabase Staging Sandbox** | **GO** | All 10 static, structural, AST, and token verification suites passed with zero errors. The consolidated migration runs inside an atomic transaction (`BEGIN ... COMMIT`) with fail-closed preflight assertions, explicit constraint conflict pre-checks, non-destructive storage configuration, and automated post-migration integrity verification. Zero destructive operations (`DROP TABLE`, `TRUNCATE`, `DELETE`) exist. |
 | **Direct Production Environment** | **NO-GO** | In accordance with strict engineering standards, static checks do not prove runtime correctness. No migration may be deployed to production without prior execution, functional smoke testing, and load validation in an isolated staging sandbox. |
 
 ---
@@ -67,9 +67,31 @@ Below is the definitive function-by-function architectural audit of all 39 funct
 | **38** | `public.admin_list_telemetry_events` | `JSONB` | `SECURITY DEFINER` | **DEFINER REQUIRED** | System diagnostic and component error query. Gated to `is_admin() = true`. |
 | **39** | `public.admin_get_telemetry_summary` | `JSONB` | `SECURITY DEFINER` | **DEFINER REQUIRED** | Rolling 24-hour system health diagnostic summary. Gated to `is_admin() = true`. |
 
-### 2.2 Summary of Function Auditing & Corrections
-- **35 functions legitimately require `SECURITY DEFINER`**: They prevent RLS recursion, coordinate cross-table transactions where clients lack direct base table grants, or enforce admin-only adjudication.
-- **4 functions have been corrected to `SECURITY INVOKER`** (`set_updated_at`, `validate_doctor_document_path`, `validate_doctor_document_metadata`, `prevent_audit_log_tampering`): These functions access zero database tables. Removing `SECURITY DEFINER` eliminates unnecessary privilege escalation, enforces strict least privilege, and maintains 100% of the intended trigger and validation behavior. All 4 functions retain `SET search_path = pg_catalog` and `OWNER TO postgres`.
+### 2.2 Reconciled Architectural Category Breakdown
+
+The 39 functions break down into **exactly 35 `SECURITY DEFINER`** functions and **exactly 4 `SECURITY INVOKER`** functions across 11 explicit architectural categories:
+
+1. **RLS Role Evaluation Helpers (4 DEFINER):** `auth_user_role`, `is_admin`, `is_doctor`, `is_patient`. (Required to bypass caller RLS on `public.profiles` and prevent infinite recursion).
+2. **Administrative Bootstrap RPC (1 DEFINER):** `bootstrap_admin_role`. (Elevated initial setup to promote the first administrator).
+3. **Profile & Doctor Authorization/Sync Triggers (4 DEFINER):** `handle_new_user`, `protect_profile_role`, `protect_doctor_fields`, `sync_doctor_approval`. (Required for system user provisioning and administrative field protection).
+4. **Storage Ownership Helper (1 DEFINER):** `is_doctor_document_owner`. (Required to evaluate UUID folder ownership across storage and application schemas).
+5. **Storage Deletion Queue Trigger (1 DEFINER):** `enqueue_doctor_document_storage_deletion`. (Required to insert into `storage_deletion_queue` where direct client insert is revoked).
+6. **Core Transactional Appointment & Onboarding RPCs (10 DEFINER):** `submit_doctor_application`, `register_doctor_document`, `complete_patient_onboarding`, `book_appointment`, `reschedule_appointment`, `cancel_appointment`, `patient_cancel_appointment`, `doctor_respond_appointment`, `doctor_close_appointment`, `dismiss_reminder`. (Required for atomic multi-table coordination and row locking).
+7. **Administrative Review & Application Dossier RPCs (4 DEFINER):** `admin_review_doctor_application`, `admin_list_doctor_applications`, `admin_get_doctor_application_details`, `admin_get_application_stats`. (Required for administrative dossier aggregation and role state transitions).
+8. **Internal Audit Logging Engine (1 DEFINER):** `record_audit_log_internal`. (Required to write immutable compliance logs where client insert is revoked).
+9. **System Lifecycle Audit Triggers (4 DEFINER):** `audit_doctor_verification_lifecycle`, `audit_appointment_lifecycle`, `audit_doctor_document_lifecycle`, `audit_profile_role_lifecycle`. (Required to record audit logs during DML execution).
+10. **Operational Telemetry Ingestion RPC (1 DEFINER):** `record_telemetry_event`. (Required to write telemetry logs under caller rate-limiting).
+11. **Administrative Audit & Telemetry Query RPCs (4 DEFINER):** `admin_list_audit_logs`, `admin_get_audit_stats`, `admin_list_telemetry_events`, `admin_get_telemetry_summary`. (Required for filtered log access gated to `is_admin() = true`).
+
+**Category Sum:** 4 + 1 + 4 + 1 + 1 + 10 + 4 + 1 + 4 + 1 + 4 = **35 `SECURITY DEFINER` functions.**
+
+**Least-Privilege Utility Functions (4 INVOKER):**
+- `set_updated_at`: In-memory tuple timestamp assignment.
+- `validate_doctor_document_path`: Pure scalar regex validation.
+- `validate_doctor_document_metadata`: Pure scalar parameter sanitization.
+- `prevent_audit_log_tampering`: Unconditional exception raising (`42501`).
+
+**Grand Total:** 35 DEFINER + 4 INVOKER = **39 functions.**
 
 ---
 
@@ -111,7 +133,7 @@ Every `SECURITY DEFINER` function was inspected for authorization bypass risks:
 
 ---
 
-## 6. Comprehensive Data Preservation, Mutation & Storage Configuration Audit
+## 6. Comprehensive Data Preservation, Mutation & Policy Audit
 
 Every SQL statement in `voicecare_phase2_consolidated_migration.sql` capable of modifying schema objects, constraints, policies, or data was individually analyzed:
 
@@ -119,10 +141,10 @@ Every SQL statement in `voicecare_phase2_consolidated_migration.sql` capable of 
 
 | Mutation Category | Occurrences in SQL | Target Objects | What Existing Data / Config It Can Affect | Can It Overwrite Existing Values? | Safe on Non-Empty Database? | Reversible? |
 | :--- | :---: | :--- | :--- | :---: | :---: | :---: |
-| **`storage.buckets` Configuration** | 1 | `storage.buckets` (`'doctor-docs'`) | Only affects the `'doctor-docs'` bucket row if it already exists. | **NO (Corrected).** Changed from `ON CONFLICT (id) DO UPDATE SET` to `ON CONFLICT (id) DO NOTHING;`. If `'doctor-docs'` already exists, existing `public`, `file_size_limit`, and `allowed_mime_types` settings are untouched. Additionally asserts `public = false`. | **YES** | **YES** |
-| **`ON CONFLICT DO NOTHING`** | 2 | `public.profiles` (line 804 in `handle_new_user`), `storage.buckets` (line 1604) | None. Skips insert if primary key already exists. | **NO.** Zero data or configuration is modified when conflict is detected. | **YES** | **YES** |
-| **`ON CONFLICT DO UPDATE`** | 1 | `public.patients` (line 2791 in `complete_patient_onboarding` RPC) | Patient onboarding profile record for `auth.uid()`. | **CONTROLLED.** Only updates patient details when the patient explicitly re-submits their onboarding form. Uses `COALESCE(EXCLUDED.col, patients.col)` to prevent nulling existing data. | **YES** | **YES** |
-| **`DROP CONSTRAINT`** | 3 | `doctor_schedules.uq_doctor_schedules_no_overlap`, `appointments.uq_doctor_no_appointment_overlap`, `appointments.uq_patient_no_appointment_overlap` | Existing constraints on schedules and appointments. | **NO.** In PostgreSQL, `ADD CONSTRAINT` has no `IF NOT EXISTS` clause. Dropping the constraint before re-adding it with `ADD CONSTRAINT ... EXCLUDE USING gist` ensures idempotent execution. `ADD CONSTRAINT` validates all existing rows; if existing data violates the constraint, PostgreSQL aborts and rolls back the transaction. | **YES** | **YES** |
+| **`storage.buckets` Configuration** | 1 | `storage.buckets` (`'doctor-docs'`) | Only affects the `'doctor-docs'` bucket row if it already exists. | **NO (Corrected).** Changed to `ON CONFLICT (id) DO NOTHING;`. If `'doctor-docs'` already exists, existing `public`, `file_size_limit`, and `allowed_mime_types` settings are untouched. Additionally asserts `public = false`. | **YES** | **YES** |
+| **`ON CONFLICT DO NOTHING`** | 2 | `public.profiles` (`handle_new_user`), `storage.buckets` (`doctor-docs`) | None. Skips insert if primary key already exists. | **NO.** Zero data or configuration is modified when conflict is detected. | **YES** | **YES** |
+| **`ON CONFLICT DO UPDATE`** | 1 | `public.patients` (`complete_patient_onboarding` RPC) | Patient onboarding profile record for `auth.uid()`. | **CONTROLLED.** Only updates patient details when the patient explicitly re-submits their onboarding form. Uses `COALESCE(EXCLUDED.col, patients.col)` to prevent nulling existing data. | **YES** | **YES** |
+| **`DROP CONSTRAINT`** | 3 | `doctor_schedules.uq_doctor_schedules_no_overlap`, `appointments.uq_doctor_no_appointment_overlap`, `appointments.uq_patient_no_appointment_overlap` | Existing constraints on schedules and appointments. | **NO.** PostgreSQL lacks `ADD CONSTRAINT IF NOT EXISTS` for exclusion constraints. Dropping before re-adding is required for idempotency. Guarded by explicit conflict pre-checks (Section 6.3). | **YES** | **YES** |
 | **`DROP POLICY`** | 41 | RLS policies on all 12 tables and `storage.objects` | Row Level Security policies. | **NO.** In PostgreSQL, `CREATE POLICY` has no `OR REPLACE` syntax. Dropping existing policy names before re-creating them is the standard idempotent pattern. Does not delete, modify, or corrupt table data. | **YES** | **YES** |
 | **`ALTER TABLE ... ENABLE RLS`** | 13 | All 12 application tables + `storage.objects` | Row filtering mode. | **NO.** Enables RLS on tables. Idempotent if RLS is already active. Does not modify table rows. | **YES** | **YES** |
 | **`UPDATE` (in RPCs & triggers)** | 19 | `profiles`, `doctors`, `appointments`, `in_app_reminders`, `doctor_verifications` | Specific rows targeted by user actions (e.g. appointment cancellation, admin approval). | **CONTROLLED.** Every `UPDATE` statement in the migration is enclosed inside a transactional RPC or trigger with a strict `WHERE id = ...` or `WHERE doctor_id = ...` clause under row lock (`FOR UPDATE`). Zero unconditional table-wide updates exist. | **YES** | **YES** |
@@ -132,7 +154,7 @@ Every SQL statement in `voicecare_phase2_consolidated_migration.sql` capable of 
 
 ### 6.2 Storage Bucket Safety Deep Dive
 
-- **Previous Risk Identified:** The initial storage setup used `INSERT INTO storage.buckets (...) ON CONFLICT (id) DO UPDATE SET public = false, file_size_limit = ..., allowed_mime_types = ...;`. If a staging database had an existing bucket named `doctor-docs` with custom file size limits or MIME types, re-running the migration would have silently overwritten those settings.
+- **Vulnerability Identified in Previous Draft:** The initial storage setup used `INSERT INTO storage.buckets (...) ON CONFLICT (id) DO UPDATE SET public = false, file_size_limit = ..., allowed_mime_types = ...;`. If a staging database had an existing bucket named `doctor-docs` with custom file size limits or MIME types, re-running the migration would have silently overwritten those settings.
 - **Correction Applied:**
   1. Changed to non-destructive `ON CONFLICT (id) DO NOTHING;`. If `doctor-docs` exists, its existing configuration is preserved without modification.
   2. Added a defensive security assertion:
@@ -144,6 +166,121 @@ Every SQL statement in `voicecare_phase2_consolidated_migration.sql` capable of 
      END IF;
      ```
   3. Existing unrelated storage buckets (e.g., `avatars`, `reports`) and foreign storage policies are untouched, and any foreign permissive policy on `storage.objects` triggers the fail-closed preflight halt.
+
+### 6.3 GiST Exclusion Constraint Replacement & Conflict Pre-Check Deep Dive
+
+PostgreSQL does not natively support `ADD CONSTRAINT IF NOT EXISTS` for table constraints (including `EXCLUDE USING gist`). Therefore, to achieve idempotent re-execution on existing databases, the migration must issue `DROP CONSTRAINT IF EXISTS <name>` followed by `ALTER TABLE ... ADD CONSTRAINT <name> EXCLUDE USING gist (...)`.
+
+#### Explicit Conflict Pre-Checks
+Before dropping and replacing any GiST exclusion constraint, the consolidated migration executes an explicit validation block:
+1. **`uq_doctor_schedules_no_overlap`:**
+   ```sql
+   DO $$
+   DECLARE v_conflicts INT := 0;
+   BEGIN
+       SELECT COUNT(*) INTO v_conflicts
+       FROM public.doctor_schedules s1
+       JOIN public.doctor_schedules s2
+           ON s1.doctor_id = s2.doctor_id
+          AND s1.day_of_week = s2.day_of_week
+          AND s1.id <> s2.id
+          AND s1.is_active = true AND s2.is_active = true
+          AND tsrange(('2000-01-01'::date + s1.start_time), ('2000-01-01'::date + s1.end_time), '[)') &&
+              tsrange(('2000-01-01'::date + s2.start_time), ('2000-01-01'::date + s2.end_time), '[)');
+       IF v_conflicts > 0 THEN
+           RAISE EXCEPTION 'PRE-MIGRATION CONSTRAINT CONFLICT: Found % overlapping active doctor schedule rows...', v_conflicts;
+       END IF;
+   END; $$;
+   ```
+2. **`uq_doctor_no_appointment_overlap` and `uq_patient_no_appointment_overlap`:**
+   ```sql
+   DO $$
+   DECLARE
+       v_doctor_conflicts INT := 0;
+       v_patient_conflicts INT := 0;
+   BEGIN
+       SELECT COUNT(*) INTO v_doctor_conflicts
+       FROM public.appointments a1 JOIN public.appointments a2
+           ON a1.doctor_id = a2.doctor_id AND a1.id <> a2.id
+          AND a1.status IN ('pending', 'confirmed') AND a2.status IN ('pending', 'confirmed')
+          AND tsrange((a1.appointment_date + a1.appointment_time)::timestamp, (a1.appointment_date + a1.end_time)::timestamp, '[)') &&
+              tsrange((a2.appointment_date + a2.appointment_time)::timestamp, (a2.appointment_date + a2.end_time)::timestamp, '[)');
+       IF v_doctor_conflicts > 0 THEN
+           RAISE EXCEPTION 'PRE-MIGRATION CONSTRAINT CONFLICT: Found % overlapping doctor appointments...', v_doctor_conflicts;
+       END IF;
+
+       SELECT COUNT(*) INTO v_patient_conflicts
+       FROM public.appointments a1 JOIN public.appointments a2
+           ON a1.patient_id = a2.patient_id AND a1.id <> a2.id
+          AND a1.status IN ('pending', 'confirmed') AND a2.status IN ('pending', 'confirmed')
+          AND tsrange((a1.appointment_date + a1.appointment_time)::timestamp, (a1.appointment_date + a1.end_time)::timestamp, '[)') &&
+              tsrange((a2.appointment_date + a2.appointment_time)::timestamp, (a2.appointment_date + a2.end_time)::timestamp, '[)');
+       IF v_patient_conflicts > 0 THEN
+           RAISE EXCEPTION 'PRE-MIGRATION CONSTRAINT CONFLICT: Found % overlapping patient appointments...', v_patient_conflicts;
+       END IF;
+   END; $$;
+   ```
+
+#### Impact Analysis: What Happens If Conflicting Data Exists?
+- If conflicting rows exist in a populated database, the explicit pre-check immediately halts the transaction and raises a detailed `PRE-MIGRATION CONSTRAINT CONFLICT` error stating the exact violation type and count.
+- Because the migration runs inside a `BEGIN ... COMMIT` block, PostgreSQL immediately executes a complete transaction rollback.
+- Even if the pre-check were bypassed, PostgreSQL's internal engine executes an exhaustive table scan during `ADD CONSTRAINT ... EXCLUDE USING gist`. If any two rows conflict, PostgreSQL raises `ERROR 23P01 (exclusion_violation)` and aborts the transaction.
+- In both cases, the existing database state, data, and constraints remain 100% intact.
+- The constraint definitions are strictly identical to the original design; no predicates have been weakened or removed.
+
+### 6.4 Comprehensive RLS Policy Drop & Replacement Audit
+
+PostgreSQL requires `DROP POLICY IF EXISTS <name> ON <table>` before `CREATE POLICY <name> ON <table>` because it does not support `CREATE OR REPLACE POLICY`.
+
+The consolidated migration drops exactly 41 policies by explicit name and re-creates 26 canonical policies across the 12 tables and `storage.objects`:
+
+| Target Table / Schema | Dropped Policy Name | Outcome / Status | Security Justification |
+| :--- | :--- | :---: | :--- |
+| `public.profiles` | `"profiles: select own or admin"` | **Re-created** | Own profile read or admin read. |
+| `public.profiles` | `"profiles: update own"` | **Re-created** | Own profile update (role changes guarded by trigger). |
+| `public.patients` | `"patients: select own or admin"` | **Re-created** | Own patient record or admin read. |
+| `public.patients` | `"patients: insert own"` | **Re-created** | Patient self-registration. |
+| `public.patients` | `"patients: update own or admin"` | **Re-created** | Patient self-update or admin update. |
+| `public.doctors` | `"doctors: select approved active or own or admin"` | **Re-created** | Public directory read for approved/active; private read for own/admin. |
+| `public.doctors` | `"doctors: select approved or own or admin"` | **Retired** | Older Part 1 variant dropped to eliminate duplicate policies. |
+| `public.doctors` | `"doctors: insert own"` | **Retired** | Direct client insert dropped; replaced by `submit_doctor_application` RPC. |
+| `public.doctors` | `"doctors: admin insert"` | **Re-created** | Admin direct provisioning. |
+| `public.doctors` | `"doctors: update own or admin"` | **Re-created** | Doctor profile update (protected fields guarded by trigger). |
+| `public.doctor_verifications` | `"verifications: select own or admin"` | **Re-created** | Doctor read own dossier; admin read all. |
+| `public.doctor_verifications` | `"verifications: insert own or admin"` | **Retired** | Direct client insert dropped; replaced by `submit_doctor_application` RPC. |
+| `public.doctor_verifications` | `"verifications: admin insert"` | **Re-created** | Admin direct verification insert. |
+| `public.doctor_verifications` | `"verifications: update admin only"` | **Re-created** | Strictly admin-only verification updates. |
+| `public.doctor_documents` | `"documents: select own or admin"` | **Re-created** | Doctor read own document metadata; admin read all. |
+| `public.doctor_documents` | `"documents: insert own"` | **Retired** | **Direct client insert REVOKED to eliminate 25-doc quota bypass.** |
+| `public.doctor_documents` | `"documents: insert own doctor"` | **Retired** | Direct client insert REVOKED to enforce `register_doctor_document()`. |
+| `public.doctor_documents` | `"documents: insert doctor or admin"` | **Retired** | Direct client insert REVOKED to enforce quota locking. |
+| `public.doctor_documents` | `"documents: delete own or admin"` | **Re-created** | Doctor delete own document; triggers storage deletion queue. |
+| `public.doctor_documents` | `"documents: delete own doctor or admin"` | **Retired** | Historical duplicate dropped. |
+| `public.doctor_documents` | `"documents: delete doctor or admin"` | **Retired** | Historical duplicate dropped. |
+| `public.doctor_schedules` | `"schedules: select active approved or own or admin"` | **Re-created** | Public directory read for active/approved schedules. |
+| `public.doctor_schedules` | `"schedules: select active or own or admin"` | **Retired** | Historical variant dropped. |
+| `public.doctor_schedules` | `"schedules: manage own or admin"` | **Retired** | Historical variant dropped. |
+| `public.doctor_schedules` | `"schedules: manage own doctor or admin"` | **Re-created** | Approved doctor schedule management. |
+| `public.doctor_leaves` | `"leaves: select own or admin"` | **Re-created** | Read doctor leaves. |
+| `public.doctor_leaves` | `"leaves: manage own or admin"` | **Retired** | Historical variant dropped. |
+| `public.doctor_leaves` | `"leaves: manage own doctor or admin"` | **Re-created** | Approved doctor leave management. |
+| `public.appointments` | `"appointments: select participant or admin"` | **Re-created** | Patient, assigned doctor, or admin read. |
+| `public.in_app_reminders` | `"reminders: select own or admin"` | **Re-created** | User read own notifications. |
+| `storage.objects` | `"doctor_docs: select own or admin"` | **Re-created** | Scoped strictly to `bucket_id = 'doctor-docs'`. |
+| `storage.objects` | `"doctor_docs: insert own or admin"` | **Re-created** | Scoped strictly to `bucket_id = 'doctor-docs'`. |
+| `storage.objects` | `"doctor_docs: update own or admin"` | **Re-created** | Scoped strictly to `bucket_id = 'doctor-docs'`. |
+| `storage.objects` | `"doctor_docs: delete own or admin"` | **Re-created** | Scoped strictly to `bucket_id = 'doctor-docs'`. |
+| `storage.objects` | `"doctor-docs: doctor upload own"` | **Retired** | Historical hyphenated variant dropped. |
+| `storage.objects` | `"doctor-docs: doctor read own"` | **Retired** | Historical hyphenated variant dropped. |
+| `storage.objects` | `"doctor-docs: doctor delete own"` | **Retired** | Historical hyphenated variant dropped. |
+| `storage.objects` | `"doctor-docs: admin read all"` | **Retired** | Historical hyphenated variant dropped. |
+| `public.storage_deletion_queue` | `"storage_deletion_queue: admin read only"` | **Re-created** | Admin and background worker read only. |
+| `public.audit_logs` | `"audit_logs: admin read only"` | **Re-created** | Strictly admin-only audit read. |
+| `public.operational_telemetry` | `"telemetry: admin read only"` | **Re-created** | Strictly admin-only telemetry read. |
+
+#### Policy Replacement Security Invariants
+- **No Unrelated Policies Dropped:** All 41 dropped policies belong strictly to the 12 VoiceCare application tables and the `doctor-docs` storage bucket on `storage.objects`. No policies on other tables, auth schemas, or unrelated storage buckets (e.g. `avatars`) are dropped.
+- **No Silent Weakening:** The 15 historical policies that were dropped and retired were intentionally removed during security hardening (e.g., revoking direct client `INSERT` on `doctor_documents` to close the 25-document quota bypass vector, and replacing direct table inserts with trusted transactional RPCs). All 26 active policies enforce strict tenant separation and least privilege.
 
 ---
 
