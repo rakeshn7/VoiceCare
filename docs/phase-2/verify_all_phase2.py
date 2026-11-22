@@ -77,6 +77,7 @@ def run_suite() -> bool:
         (PART7_DIR / "voicecare_phase2_part7_security_audit.md", "Part 7 Security Audit"),
         (PART7_DIR / "voicecare_phase2_supabase_checklist.md", "Part 7 Supabase Checklist"),
         (PART7_DIR / "voicecare_phase2_completion_report.md", "Part 7 Completion Report"),
+        (PART7_DIR / "voicecare_phase2_final_safety_review.md", "Part 7 Final Safety Review"),
         (PART7_DIR / "verify_part7_e2e.py", "Part 7 Verification Script"),
         (FUNCTIONS_DIR / "create-doctor-upload-url" / "index.ts", "Edge Function: create-doctor-upload-url"),
         (FUNCTIONS_DIR / "create-doctor-document-view-url" / "index.ts", "Edge Function: create-doctor-document-view-url"),
