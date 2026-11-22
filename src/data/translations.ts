@@ -113,6 +113,48 @@ export type TranslationKey =
   | 'cancelAppointmentTitle'
   | 'cancelModalDescription'
   | 'yesCancelAppointment'
+  // ── Admin Review & Doctor Verification ──
+  | 'adminPortal'
+  | 'adminDashboard'
+  | 'adminLogin'
+  | 'adminLogout'
+  | 'adminRequired'
+  | 'adminAccessPrompt'
+  | 'adminEmailLabel'
+  | 'adminPasswordLabel'
+  | 'loginAsAdmin'
+  | 'backToPortal'
+  | 'pendingApplications'
+  | 'approvedDoctors'
+  | 'rejectedApplications'
+  | 'totalApplications'
+  | 'reviewApplication'
+  | 'approveDoctor'
+  | 'rejectDoctor'
+  | 'rejectionReason'
+  | 'rejectionReasonPrompt'
+  | 'rejectionReasonPlaceholder'
+  | 'confirmApprovalTitle'
+  | 'confirmApprovalPrompt'
+  | 'yesApproveDoctor'
+  | 'yesRejectApplication'
+  | 'applicationApprovedSuccess'
+  | 'applicationRejectedSuccess'
+  | 'verificationDocuments'
+  | 'viewDocument'
+  | 'noDocumentsFound'
+  | 'registrationNumberLabel'
+  | 'issuingAuthorityLabel'
+  | 'experienceLabel'
+  | 'clinicDetails'
+  | 'statusPending'
+  | 'statusApproved'
+  | 'statusRejected'
+  | 'statusSuspended'
+  | 'filterStatusAll'
+  | 'searchApplicationsPlaceholder'
+  | 'noApplicationsFound'
+  | 'doctorCredentials'
 
 type Translations = Record<TranslationKey, string>
 
@@ -229,6 +271,47 @@ export const UI_TEXT: Record<LanguageCode, Translations> = {
     cancelAppointmentTitle: 'Cancel Appointment?',
     cancelModalDescription: 'Are you sure you want to cancel this appointment? This action cannot be undone.',
     yesCancelAppointment: 'Yes, Cancel Appointment',
+    adminPortal: 'Admin Portal',
+    adminDashboard: 'Doctor Verification Dashboard',
+    adminLogin: 'Administrator Login',
+    adminLogout: 'Sign Out',
+    adminRequired: 'Administrator Privileges Required',
+    adminAccessPrompt: 'Please enter administrator credentials to access the doctor verification engine.',
+    adminEmailLabel: 'Admin Email or Username',
+    adminPasswordLabel: 'Admin Security Key',
+    loginAsAdmin: 'Authenticate as Admin',
+    backToPortal: 'Back to VoiceCare',
+    pendingApplications: 'Pending Applications',
+    approvedDoctors: 'Approved Doctors',
+    rejectedApplications: 'Rejected Applications',
+    totalApplications: 'Total Applications',
+    reviewApplication: 'Review Application',
+    approveDoctor: 'Approve Application',
+    rejectDoctor: 'Reject Application',
+    rejectionReason: 'Rejection Reason',
+    rejectionReasonPrompt: 'Please specify the exact clinical or credential reason for declining this application:',
+    rejectionReasonPlaceholder: 'e.g. State Medical Council registration certificate unreadable or expired (min 5 characters)...',
+    confirmApprovalTitle: 'Approve Doctor Application?',
+    confirmApprovalPrompt: 'This will verify the practitioner, promote their profile role to Doctor, and enable public appointment bookings.',
+    yesApproveDoctor: 'Yes, Approve Practitioner',
+    yesRejectApplication: 'Confirm Rejection',
+    applicationApprovedSuccess: 'Doctor application approved successfully! Profile promoted to verified Doctor.',
+    applicationRejectedSuccess: 'Application declined. Rejection reason recorded and status updated.',
+    verificationDocuments: 'Submitted Verification Documents',
+    viewDocument: 'View Document',
+    noDocumentsFound: 'No documents attached',
+    registrationNumberLabel: 'Registration Number',
+    issuingAuthorityLabel: 'Issuing Medical Council',
+    experienceLabel: 'Years Experience',
+    clinicDetails: 'Clinic & Practice Information',
+    statusPending: 'Pending Review',
+    statusApproved: 'Approved & Active',
+    statusRejected: 'Application Declined',
+    statusSuspended: 'Practice Suspended',
+    filterStatusAll: 'All Applications',
+    searchApplicationsPlaceholder: 'Search by doctor name, council number, or clinic...',
+    noApplicationsFound: 'No doctor applications found matching your criteria.',
+    doctorCredentials: 'Doctor Credentials & Verification',
   },
   hi: {
     appName: 'वॉयसकेयर',
@@ -342,6 +425,47 @@ export const UI_TEXT: Record<LanguageCode, Translations> = {
     cancelAppointmentTitle: 'अपॉइंटमेंट रद्द करें?',
     cancelModalDescription: 'क्या आप वाकई इस अपॉइंटमेंट को रद्द करना चाहते हैं? यह क्रिया पूर्ववत नहीं की जा सकती।',
     yesCancelAppointment: 'हाँ, अपॉइंटमेंट रद्द करें',
+    adminPortal: 'व्यवस्थापक पोर्टल',
+    adminDashboard: 'डॉक्टर सत्यापन डैशबोर्ड',
+    adminLogin: 'व्यवस्थापक लॉगिन',
+    adminLogout: 'लॉग आउट',
+    adminRequired: 'व्यवस्थापक विशेषाधिकार आवश्यक हैं',
+    adminAccessPrompt: 'डॉक्टर सत्यापन इंजन तक पहुँचने के लिए कृपया व्यवस्थापक क्रेडेंशियल दर्ज करें।',
+    adminEmailLabel: 'व्यवस्थापक ईमेल या उपयोगकर्ता नाम',
+    adminPasswordLabel: 'व्यवस्थापक सुरक्षा कुंजी',
+    loginAsAdmin: 'व्यवस्थापक के रूप में प्रमाणित करें',
+    backToPortal: 'वॉयसकेयर पर वापस जाएं',
+    pendingApplications: 'लंबित आवेदन',
+    approvedDoctors: 'स्वीकृत डॉक्टर',
+    rejectedApplications: 'अस्वीकृत आवेदन',
+    totalApplications: 'कुल आवेदन',
+    reviewApplication: 'आवेदन की समीक्षा करें',
+    approveDoctor: 'आवेदन स्वीकृत करें',
+    rejectDoctor: 'आवेदन अस्वीकार करें',
+    rejectionReason: 'अस्वीकृति का कारण',
+    rejectionReasonPrompt: 'कृपया इस आवेदन को अस्वीकार करने का सटीक नैदानिक या क्रेडेंशियल कारण बताएं:',
+    rejectionReasonPlaceholder: 'उदा. राज्य मेडिकल काउंसिल पंजीकरण प्रमाणपत्र अपठनीय या समाप्त हो गया है (न्यूनतम 5 वर्ण)...',
+    confirmApprovalTitle: 'डॉक्टर आवेदन स्वीकृत करें?',
+    confirmApprovalPrompt: 'यह चिकित्सक को सत्यापित करेगा, उनकी प्रोफ़ाइल भूमिका को डॉक्टर में पदोन्नत करेगा, और सार्वजनिक अपॉइंटमेंट बुकिंग सक्षम करेगा।',
+    yesApproveDoctor: 'हाँ, चिकित्सक को स्वीकृत करें',
+    yesRejectApplication: 'अस्वीकृति की पुष्टि करें',
+    applicationApprovedSuccess: 'डॉक्टर आवेदन सफलतापूर्वक स्वीकृत! प्रोफ़ाइल सत्यापित डॉक्टर के रूप में पदोन्नत।',
+    applicationRejectedSuccess: 'आवेदन अस्वीकार कर दिया गया। अस्वीकृति का कारण दर्ज किया गया और स्थिति अपडेट की गई।',
+    verificationDocuments: 'प्रस्तुत सत्यापन दस्तावेज़',
+    viewDocument: 'दस्तावेज़ देखें',
+    noDocumentsFound: 'कोई दस्तावेज़ संलग्न नहीं है',
+    registrationNumberLabel: 'पंजीकरण संख्या',
+    issuingAuthorityLabel: 'जारीकर्ता मेडिकल काउंसिल',
+    experienceLabel: 'वर्षों का अनुभव',
+    clinicDetails: 'क्लिनिक और अभ्यास की जानकारी',
+    statusPending: 'समीक्षा लंबित',
+    statusApproved: 'स्वीकृत और सक्रिय',
+    statusRejected: 'आवेदन अस्वीकृत',
+    statusSuspended: 'अभ्यास निलंबित',
+    filterStatusAll: 'सभी आवेदन',
+    searchApplicationsPlaceholder: 'डॉक्टर का नाम, काउंसिल नंबर, या क्लिनिक द्वारा खोजें...',
+    noApplicationsFound: 'आपके मानदंडों से मेल खाने वाला कोई डॉक्टर आवेदन नहीं मिला।',
+    doctorCredentials: 'डॉक्टर क्रेडेंशियल और सत्यापन',
   },
   kn: {
     appName: 'ವಾಯ್ಸ್‌ಕೇರ್',
@@ -455,6 +579,47 @@ export const UI_TEXT: Record<LanguageCode, Translations> = {
     cancelAppointmentTitle: 'ಅಪಾಯಿಂಟ್‌ಮೆಂಟ್ ರದ್ದುಮಾಡಬೇಕೆ?',
     cancelModalDescription: 'ನೀವು ಖಚಿತವಾಗಿ ಈ ಅಪಾಯಿಂಟ್‌ಮೆಂಟ್ ರದ್ದುಮಾಡಲು ಬಯಸುವಿರಾ? ಈ ಕ್ರಿಯೆಯನ್ನು ರದ್ದುಗೊಳಿಸಲಾಗುವುದಿಲ್ಲ.',
     yesCancelAppointment: 'ಹೌದು, ಅಪಾಯಿಂಟ್‌ಮೆಂಟ್ ರದ್ದುಮಾಡಿ',
+    adminPortal: 'ನಿರ್ವಾಹಕ ಪೋರ್ಟಲ್',
+    adminDashboard: 'ವೈದ್ಯರ ಪರಿಶೀಲನಾ ಡ್ಯಾಶ್‌ಬೋರ್ಡ್',
+    adminLogin: 'ನಿರ್ವಾಹಕ ಲಾಗಿನ್',
+    adminLogout: 'ಸೈನ್ ಔಟ್',
+    adminRequired: 'ನಿರ್ವಾಹಕರ ಹಕ್ಕುಗಳು ಅಗತ್ಯವಿದೆ',
+    adminAccessPrompt: 'ವೈದ್ಯರ ಪರಿಶೀಲನಾ ವ್ಯವಸ್ಥೆಯನ್ನು ಪ್ರವೇಶಿಸಲು ದಯವಿಟ್ಟು ನಿರ್ವಾಹಕ ರುಜುವಾತುಗಳನ್ನು ನಮೂದಿಸಿ.',
+    adminEmailLabel: 'ನಿರ್ವಾಹಕ ಇಮೇಲ್ ಅಥವಾ ಬಳಕೆದಾರ ಹೆಸರು',
+    adminPasswordLabel: 'ನಿರ್ವಾಹಕ ಭದ್ರತಾ ಕೀ',
+    loginAsAdmin: 'ನಿರ್ವಾಹಕರಾಗಿ ದೃಢೀಕರಿಸಿ',
+    backToPortal: 'ವಾಯ್ಸ್‌ಕೇರ್‌ಗೆ ಹಿಂತಿರುಗಿ',
+    pendingApplications: 'ಬಾಕಿ ಇರುವ ಅರ್ಜಿಗಳು',
+    approvedDoctors: 'ಅನುಮೋದಿತ ವೈದ್ಯರು',
+    rejectedApplications: 'ತಿರಸ್ಕರಿಸಲಾದ ಅರ್ಜಿಗಳು',
+    totalApplications: 'ಒಟ್ಟು ಅರ್ಜಿಗಳು',
+    reviewApplication: 'ಅರ್ಜಿಯನ್ನು ಪರಿಶೀಲಿಸಿ',
+    approveDoctor: 'ಅರ್ಜಿಯನ್ನು ಅನುಮೋದಿಸಿ',
+    rejectDoctor: 'ಅರ್ಜಿಯನ್ನು ತಿರಸ್ಕರಿಸಿ',
+    rejectionReason: 'ತಿರಸ್ಕಾರದ ಕಾರಣ',
+    rejectionReasonPrompt: 'ಈ ಅರ್ಜಿಯನ್ನು ತಿರಸ್ಕರಿಸಲು ನಿಖರವಾದ ವೈದ್ಯಕೀಯ ಅಥವಾ ದಾಖಲೆ ಕಾರಣವನ್ನು ತಿಳಿಸಿ:',
+    rejectionReasonPlaceholder: 'ಉದಾ: ರಾಜ್ಯ ವೈದ್ಯಕೀಯ ಮಂಡಳಿ ನೋಂದಣಿ ಪ್ರಮಾಣಪತ್ರ ಸ್ಪಷ್ಟವಾಗಿಲ್ಲ ಅಥವಾ ಅವಧಿ ಮೀರಿದೆ (ಕನಿಷ್ಠ 5 ಅಕ್ಷರಗಳು)...',
+    confirmApprovalTitle: 'ವೈದ್ಯರ ಅರ್ಜಿಯನ್ನು ಅನುಮೋದಿಸಬೇಕೆ?',
+    confirmApprovalPrompt: 'ಇದು ವೈದ್ಯರನ್ನು ಪರಿಶೀಲಿಸುತ್ತದೆ, ಅವರ ಪಾತ್ರವನ್ನು ವೈದ್ಯರೆಂದು ಬದಲಾಯಿಸುತ್ತದೆ ಮತ್ತು ನೇಮಕಾತಿ ಬುಕಿಂಗ್ ಅನ್ನು ಸಕ್ರಿಯಗೊಳಿಸುತ್ತದೆ.',
+    yesApproveDoctor: 'ಹೌದು, ವೈದ್ಯರನ್ನು ಅನುಮೋದಿಸಿ',
+    yesRejectApplication: 'ತಿರಸ್ಕಾರವನ್ನು ದೃಢೀಕರಿಸಿ',
+    applicationApprovedSuccess: 'ವೈದ್ಯರ ಅರ್ಜಿ ಯಶಸ್ವಿಯಾಗಿ ಅನುಮೋದನೆಗೊಂಡಿದೆ! ಪ್ರೊಫೈಲ್ ವೈದ್ಯರೆಂದು ಗುರುತಿಸಲ್ಪಟ್ಟಿದೆ.',
+    applicationRejectedSuccess: 'ಅರ್ಜಿಯನ್ನು ತಿರಸ್ಕರಿಸಲಾಗಿದೆ. ಕಾರಣ ದಾಖಲಿಸಲಾಗಿದೆ ಮತ್ತು ಸ್ಥಿತಿ ನವೀಕರಿಸಲಾಗಿದೆ.',
+    verificationDocuments: 'ಸಲ್ಲಿಸಲಾದ ಪರಿಶೀಲನಾ ದಾಖಲೆಗಳು',
+    viewDocument: 'ದಾಖಲೆ ವೀಕ್ಷಿಸಿ',
+    noDocumentsFound: 'ಯಾವ ದಾಖಲೆಗಳೂ ಲಗತ್ತಿಸಲ್ಪಟ್ಟಿಲ್ಲ',
+    registrationNumberLabel: 'ನೋಂದಣಿ ಸಂಖ್ಯೆ',
+    issuingAuthorityLabel: 'ನೀಡಿದ ವೈದ್ಯಕೀಯ ಮಂಡಳಿ',
+    experienceLabel: 'ವರ್ಷಗಳ ಅನುಭವ',
+    clinicDetails: 'ಕ್ಲಿನಿಕ್ ಮತ್ತು ಅಭ್ಯಾಸದ ಮಾಹಿತಿ',
+    statusPending: 'ಪರಿಶೀಲನೆ ಬಾಕಿ',
+    statusApproved: 'ಅನುಮೋದಿತ ಮತ್ತು ಸಕ್ರಿಯ',
+    statusRejected: 'ಅರ್ಜಿ ತಿರಸ್ಕರಿಸಲಾಗಿದೆ',
+    statusSuspended: 'ಅಭ್ಯಾಸ ಅಮಾನತುಗೊಳಿಸಲಾಗಿದೆ',
+    filterStatusAll: 'ಎಲ್ಲಾ ಅರ್ಜಿಗಳು',
+    searchApplicationsPlaceholder: 'ವೈದ್ಯರ ಹೆಸರು, ಕೌನ್ಸಿಲ್ ಸಂಖ್ಯೆ ಅಥವಾ ಕ್ಲಿನಿಕ್ ಮೂಲಕ ಹುಡುಕಿ...',
+    noApplicationsFound: 'ನಿಮ್ಮ ಹುಡುಕಾಟಕ್ಕೆ ಹೊಂದಿಕೆಯಾಗುವ ಯಾವುದೇ ಅರ್ಜಿಗಳು ಕಂಡುಬಂದಿಲ್ಲ.',
+    doctorCredentials: 'ವೈದ್ಯರ ರುಜುವಾತುಗಳು ಮತ್ತು ಪರಿಶೀಲನೆ',
   },
   te: {
     appName: 'వాయిస్‌కేర్',
@@ -568,6 +733,47 @@ export const UI_TEXT: Record<LanguageCode, Translations> = {
     cancelAppointmentTitle: 'అపాయింట్‌మెంట్‌ను రద్దు చేయాలా?',
     cancelModalDescription: 'మీరు ఖచ్చితంగా ఈ అపాయింట్‌మెంట్‌ను రద్దు చేయాలనుకుంటున్నారా? ఈ చర్యను రద్దు చేయడం సాధ్యం కాదు.',
     yesCancelAppointment: 'అవును, అపాయింట్‌మెంట్‌ను రద్దు చేయండి',
+    adminPortal: 'అడ్మిన్ పోర్టల్',
+    adminDashboard: 'వైద్యుల ధృవీకరణ డాష్‌బోర్డ్',
+    adminLogin: 'అడ్మినిస్ట్రేటర్ లాగిన్',
+    adminLogout: 'సైన్ అవుట్',
+    adminRequired: 'అడ్మినిస్ట్రేటర్ అనుమతులు అవసరం',
+    adminAccessPrompt: 'డాక్టర్ ధృవీకరణ వ్యవస్థను యాక్సెస్ చేయడానికి దయచేసి అడ్మిన్ ఆధారాలను నమోదు చేయండి.',
+    adminEmailLabel: 'అడ్మిన్ ఈమెయిల్ లేదా యూజర్‌నేమ్',
+    adminPasswordLabel: 'అడ్మిన్ సెక్యూరిటీ కీ',
+    loginAsAdmin: 'అడ్మిన్‌గా లాగిన్ అవ్వండి',
+    backToPortal: 'వాయిస్‌కేర్‌కు తిరిగి వెళ్లండి',
+    pendingApplications: 'పెండింగ్ దరఖాస్తులు',
+    approvedDoctors: 'ఆమోదించబడిన వైద్యులు',
+    rejectedApplications: 'తిరస్కరించబడిన దరఖాస్తులు',
+    totalApplications: 'మొత్తం దరఖాస్తులు',
+    reviewApplication: 'దరఖాస్తును సమీక్షించండి',
+    approveDoctor: 'దరఖాస్తును ఆమోదించండి',
+    rejectDoctor: 'దరఖాస్తును తిరస్కరించండి',
+    rejectionReason: 'తిరస్కరణ కారణం',
+    rejectionReasonPrompt: 'దయచేసి ఈ దరఖాస్తును తిరస్కరించడానికి ఖచ్చితమైన కారణాన్ని పేర్కొనండి:',
+    rejectionReasonPlaceholder: 'ఉదా: స్టేట్ మెడికల్ కౌన్సిల్ రిజిస్ట్రేషన్ సర్టిఫికేట్ చెల్లుబాటు కాలేదు (కనీసం 5 అక్షరాలు)...',
+    confirmApprovalTitle: 'డాక్టర్ దరఖాస్తును ఆమోదించాలా?',
+    confirmApprovalPrompt: 'ఇది వైద్యుడిని ధృవీకరిస్తుంది, వారి ప్రొఫైల్ పాత్రను డాక్టర్‌గా మారుస్తుంది మరియు బుకింగ్‌లను అనుమతిస్తుంది.',
+    yesApproveDoctor: 'అవును, వైద్యుడిని ఆమోదించండి',
+    yesRejectApplication: 'తిరస్కరణను నిర్ధారించండి',
+    applicationApprovedSuccess: 'డాక్టర్ దరఖాస్తు విజయవంతంగా ఆమోదించబడింది! ప్రొఫైల్ డాక్టర్‌గా మార్చబడింది.',
+    applicationRejectedSuccess: 'దరఖాస్తు తిరస్కరించబడింది. కారణం నమోదు చేయబడింది.',
+    verificationDocuments: 'సమర్పించిన ధృవీకరణ పత్రాలు',
+    viewDocument: 'పత్రాన్ని చూడండి',
+    noDocumentsFound: 'పత్రాలు ఏవీ జోడించబడలేదు',
+    registrationNumberLabel: 'రిజిస్ట్రేషన్ సంఖ్య',
+    issuingAuthorityLabel: 'మెడికల్ కౌన్సిల్',
+    experienceLabel: 'సంవత్సరాల అనుభవం',
+    clinicDetails: 'క్లినిక్ మరియు ప్రాక్టీస్ సమాచారం',
+    statusPending: 'సమీక్ష పెండింగ్‌లో ఉంది',
+    statusApproved: 'ఆమోదించబడింది & క్రియాశీలకం',
+    statusRejected: 'దరఖాస్తు తిరస్కరించబడింది',
+    statusSuspended: 'ప్రాక్టీస్ సస్పెండ్ చేయబడింది',
+    filterStatusAll: 'అన్ని దరఖాస్తులు',
+    searchApplicationsPlaceholder: 'డాక్టర్ పేరు, కౌన్సిల్ నంబర్ లేదా క్లినిక్ ద్వారా శోధించండి...',
+    noApplicationsFound: 'మీ శోధనకు సరిపోయే డాక్టర్ దరఖాస్తులు ఏవీ కనుగొనబడలేదు.',
+    doctorCredentials: 'డాక్టర్ ఆధారాలు మరియు ధృవీకరణ',
   },
   ta: {
     appName: 'வாய்ஸ்கேர்',
@@ -681,6 +887,47 @@ export const UI_TEXT: Record<LanguageCode, Translations> = {
     cancelAppointmentTitle: 'சந்திப்பை ரத்து செய்யவா?',
     cancelModalDescription: 'இந்த சந்திப்பை நிச்சயமாக ரத்து செய்ய விரும்புகிறீர்களா? இந்த செயலை மாற்ற முடியாது.',
     yesCancelAppointment: 'ஆம், சந்திப்பை ரத்து செய்',
+    adminPortal: 'நிர்வாக போர்டல்',
+    adminDashboard: 'மருத்துவர் சரிபார்ப்பு டாஷ்போர்டு',
+    adminLogin: 'நிர்வாகி உள்நுழைவு',
+    adminLogout: 'வெளியேறு',
+    adminRequired: 'நிர்வாகி அனுமதி தேவை',
+    adminAccessPrompt: 'மருத்துவர் சரிபார்ப்பு அமைப்பை அணுக நிர்வாகி நற்சான்றிதழ்களை உள்ளிடவும்.',
+    adminEmailLabel: 'நிர்வாகி மின்னஞ்சல் அல்லது பயனர்பெயர்',
+    adminPasswordLabel: 'நிர்வாகி பாதுகாப்பு விசை',
+    loginAsAdmin: 'நிர்வாகியாக உள்நுழைக',
+    backToPortal: 'வாய்ஸ்கேருக்குத் திரும்பு',
+    pendingApplications: 'நிலுவையில் உள்ள விண்ணப்பங்கள்',
+    approvedDoctors: 'அங்கீகரிக்கப்பட்ட மருத்துவர்கள்',
+    rejectedApplications: 'நிராகரிக்கப்பட்ட விண்ணப்பங்கள்',
+    totalApplications: 'மொத்த விண்ணப்பங்கள்',
+    reviewApplication: 'விண்ணப்பத்தை மதிப்பாய்வு செய்க',
+    approveDoctor: 'விண்ணப்பத்தை அங்கீகரிக்கவும்',
+    rejectDoctor: 'விண்ணப்பத்தை நிராகரிக்கவும்',
+    rejectionReason: 'நிராகரிப்பு காரணம்',
+    rejectionReasonPrompt: 'இந்த விண்ணப்பத்தை நிராகரிப்பதற்கான சரியான காரணத்தைக் குறிப்பிடவும்:',
+    rejectionReasonPlaceholder: 'எ.கா. மாநில மருத்துவ கவுன்சில் பதிவுச் சான்றிதழ் காலாவதியானது (குறைந்தது 5 எழுத்துக்கள்)...',
+    confirmApprovalTitle: 'மருத்துவர் விண்ணப்பத்தை அங்கீகரிக்கவா?',
+    confirmApprovalPrompt: 'இது மருத்துவரை சரிபார்த்து, பொது சந்திப்பு முன்பதிவுகளை இயக்கும்.',
+    yesApproveDoctor: 'ஆம், மருத்துவரை அங்கீகரிக்கவும்',
+    yesRejectApplication: 'நிராகரிப்பை உறுதிசெய்க',
+    applicationApprovedSuccess: 'மருத்துவர் விண்ணப்பம் வெற்றிகரமாக அங்கீகரிக்கப்பட்டது!',
+    applicationRejectedSuccess: 'விண்ணப்பம் நிராகரிக்கப்பட்டது. காரணம் பதிவு செய்யப்பட்டது.',
+    verificationDocuments: 'சமர்ப்பிக்கப்பட்ட சரிபார்ப்பு ஆவணங்கள்',
+    viewDocument: 'ஆவணத்தைப் பார்க்கவும்',
+    noDocumentsFound: 'ஆவணங்கள் எதுவும் இணைக்கப்படவில்லை',
+    registrationNumberLabel: 'பதிவு எண்',
+    issuingAuthorityLabel: 'வழங்கிய மருத்துவ கவுன்சில்',
+    experienceLabel: 'வருட அனுபவம்',
+    clinicDetails: 'கிளினிக் விவரங்கள்',
+    statusPending: 'மதிப்பாய்வு நிலுவையில் உள்ளது',
+    statusApproved: 'அங்கீகரிக்கப்பட்டது',
+    statusRejected: 'விண்ணப்பம் நிராகரிக்கப்பட்டது',
+    statusSuspended: 'பயிற்சி இடைநிறுத்தப்பட்டது',
+    filterStatusAll: 'அனைத்து விண்ணப்பங்கள்',
+    searchApplicationsPlaceholder: 'மருத்துவர் பெயர், கவுன்சில் எண் அல்லது கிளினிக் மூலம் தேடவும்...',
+    noApplicationsFound: 'பொருந்தக்கூடிய மருத்துவர் விண்ணப்பங்கள் எதுவும் இல்லை.',
+    doctorCredentials: 'மருத்துவர் சான்றிதழ்கள் மற்றும் சரிபார்ப்பு',
   },
 }
 

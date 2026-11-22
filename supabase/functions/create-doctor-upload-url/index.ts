@@ -175,7 +175,7 @@ serve(async (req: Request) => {
     }
 
     // Sanitize base name (alphanumeric, underscore, hyphen)
-    const baseName = parts.slice(0, -1).join(".").replace(/[^a-zA-Z0-9_\-]/g, "_");
+    const baseName = parts.slice(0, -1).join(".").replace(/[^a-zA-Z0-9_-]/g, "_");
     const sanitizedFileName = `${baseName}.${ext}`;
 
     // Canonical path: {userId}/{sanitizedFileName}

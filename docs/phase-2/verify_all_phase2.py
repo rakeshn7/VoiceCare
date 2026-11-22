@@ -18,10 +18,12 @@ PART1_DIR = CURRENT_DIR / "part-1-database-foundation"
 PART2_DIR = CURRENT_DIR / "part-2-authentication-roles"
 PART3_DIR = CURRENT_DIR / "part-3-storage-verification"
 PART4_DIR = CURRENT_DIR / "part-4-appointment-engine"
+PART5_DIR = CURRENT_DIR / "part-5-admin-review"
 FUNCTIONS_DIR = PROJECT_ROOT / "supabase" / "functions"
 
 sys.path.insert(0, str(PART3_DIR))
 sys.path.insert(0, str(PART4_DIR))
+sys.path.insert(0, str(PART5_DIR))
 
 def strip_sql_comments(sql: str) -> str:
     sql_no_block = re.sub(r'/\*.*?\*/', '', sql, flags=re.DOTALL)
@@ -34,7 +36,7 @@ def file_hash(path: Path) -> str:
 
 def run_suite() -> bool:
     print("=" * 80)
-    print("VOICECARE PHASE 2: MASTER STATIC VERIFICATION SUITE (PARTS 1 - 4)")
+    print("VOICECARE PHASE 2: MASTER STATIC VERIFICATION SUITE (PARTS 1 - 5)")
     print("=" * 80)
     
     errors = []
@@ -58,7 +60,12 @@ def run_suite() -> bool:
         (PART4_DIR / "voicecare_phase2_part4_design.md", "Part 4 Design"),
         (PART4_DIR / "voicecare_phase2_part4_notes.md", "Part 4 Notes"),
         (PART4_DIR / "verify_part4_sql.py", "Part 4 Verification Script"),
+        (PART5_DIR / "voicecare_phase2_part5_admin_review.sql", "Part 5 SQL"),
+        (PART5_DIR / "voicecare_phase2_part5_design.md", "Part 5 Design"),
+        (PART5_DIR / "voicecare_phase2_part5_notes.md", "Part 5 Notes"),
+        (PART5_DIR / "verify_part5_sql.py", "Part 5 Verification Script"),
         (FUNCTIONS_DIR / "create-doctor-upload-url" / "index.ts", "Edge Function: create-doctor-upload-url"),
+        (FUNCTIONS_DIR / "create-doctor-document-view-url" / "index.ts", "Edge Function: create-doctor-document-view-url"),
         (FUNCTIONS_DIR / "cleanup-storage-queue" / "index.ts", "Edge Function: cleanup-storage-queue"),
         (FUNCTIONS_DIR / "deno.json", "Edge Functions: deno.json"),
     ]
@@ -170,9 +177,22 @@ def run_suite() -> bool:
         errors.append(f"Failed to execute Part 4 verification script: {ex}")
 
     # -------------------------------------------------------------------------
-    # SUITE CHECK 7: Supabase Edge Functions Audit
+    # SUITE CHECK 7: Part 5 Admin Review Verification
     # -------------------------------------------------------------------------
-    print("\n--- [SUITE CHECK 7] SUPABASE EDGE FUNCTIONS SECURITY AUDIT ---")
+    print("\n--- [SUITE CHECK 7] PART 5 ADMIN REVIEW & VERIFICATION AUDIT ---")
+    try:
+        import verify_part5_sql
+        p5_sql_path = PART5_DIR / "voicecare_phase2_part5_admin_review.sql"
+        p5_success = verify_part5_sql.run_checks(p5_sql_path)
+        if not p5_success:
+            errors.append("Part 5 static verification reported failures.")
+    except Exception as ex:
+        errors.append(f"Failed to execute Part 5 verification script: {ex}")
+
+    # -------------------------------------------------------------------------
+    # SUITE CHECK 8: Supabase Edge Functions Audit
+    # -------------------------------------------------------------------------
+    print("\n--- [SUITE CHECK 8] SUPABASE EDGE FUNCTIONS SECURITY AUDIT ---")
     upload_fn_path = FUNCTIONS_DIR / "create-doctor-upload-url" / "index.ts"
     if upload_fn_path.exists():
         with open(upload_fn_path, "r", encoding="utf-8") as f:
@@ -193,6 +213,25 @@ def run_suite() -> bool:
     else:
         errors.append(f"Missing Edge Function: {upload_fn_path}")
 
+    view_fn_path = FUNCTIONS_DIR / "create-doctor-document-view-url" / "index.ts"
+    if view_fn_path.exists():
+        with open(view_fn_path, "r", encoding="utf-8") as f:
+            view_fn_content = f.read()
+
+        if "Authorization" not in view_fn_content or "auth.getUser" not in view_fn_content:
+            errors.append("create-doctor-document-view-url missing JWT bearer verification.")
+        if "ADMIN_REQUIRED" not in view_fn_content:
+            errors.append("create-doctor-document-view-url missing administrator role guard.")
+        if "doctor_documents" not in view_fn_content:
+            errors.append("create-doctor-document-view-url missing document ownership lookup.")
+        if "createSignedUrl" not in view_fn_content:
+            errors.append("create-doctor-document-view-url missing createSignedUrl call.")
+        if "300" not in view_fn_content and "SIGNED_URL_EXPIRY_SECONDS" not in view_fn_content:
+            errors.append("create-doctor-document-view-url missing 300s expiration limit.")
+        print(" [PASS] create-doctor-document-view-url: JWT auth, admin guard, document ownership check, and 300s TTL verified.")
+    else:
+        errors.append(f"Missing Edge Function: {view_fn_path}")
+
     cleanup_fn_path = FUNCTIONS_DIR / "cleanup-storage-queue" / "index.ts"
     if cleanup_fn_path.exists():
         with open(cleanup_fn_path, "r", encoding="utf-8") as f:
@@ -209,9 +248,9 @@ def run_suite() -> bool:
         errors.append(f"Missing Edge Function: {cleanup_fn_path}")
 
     # -------------------------------------------------------------------------
-    # SUITE CHECK 8: Cross-Part Invariants & Permissions Reconciliation Audit
+    # SUITE CHECK 9: Cross-Part Invariants & Permissions Reconciliation Audit
     # -------------------------------------------------------------------------
-    print("\n--- [SUITE CHECK 8] CROSS-PART INVARIANTS & RECONCILIATION AUDIT ---")
+    print("\n--- [SUITE CHECK 9] CROSS-PART INVARIANTS & RECONCILIATION AUDIT ---")
     
     # 8.1 Base Table Grants on doctor_documents: No client INSERT in Part 2
     part2_doc_grants = re.findall(r'GRANT\s+([^;]+)\s+ON\s+(?:TABLE\s+)?public\.doctor_documents\s+TO\s+authenticated', p2_sql, re.IGNORECASE)
@@ -265,7 +304,7 @@ def run_suite() -> bool:
         return False
 
     print("\n" + "=" * 80)
-    print(">>> MASTER VERIFICATION SUCCESSFUL: ALL 4 PARTS VERIFIED WITH ZERO ERRORS! <<<")
+    print(">>> MASTER VERIFICATION SUCCESSFUL: ALL 5 PARTS VERIFIED WITH ZERO ERRORS! <<<")
     print("=" * 80)
     return True
 

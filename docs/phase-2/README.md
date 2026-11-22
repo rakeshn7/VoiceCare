@@ -20,11 +20,11 @@ This directory contains the database design artifacts, SQL migration specificati
   - **Part 2:** Authentication and Roles *(included)*
   - **Part 3:** Supabase Storage and Doctor Verification Documents *(included)*
   - **Part 4:** Appointment Engine and Doctor Onboarding RPCs *(included)*
-  - **Part 5:** Admin Review Dashboard & Verification Workflows *(upcoming)*
+  - **Part 5:** Admin Review Dashboard & Verification Workflows *(included)*
   - **Part 6:** Audit Logging, Telemetry & Compliance *(upcoming)*
   - **Part 7:** Integrated End-to-End Migration & Verification *(upcoming)*
 
-This branch (`phase-2-review`) publishes **Parts 1 through 4** for architectural review and security auditing.
+This branch (`phase-2-review`) publishes **Parts 1 through 5** for architectural review and security auditing.
 
 ---
 
@@ -60,6 +60,12 @@ docs/phase-2/
     ├── voicecare_phase2_part4_design.md         # Appointment lifecycle & onboarding engine design
     ├── voicecare_phase2_part4_notes.md          # Concurrency locking, quota, & error code specs
     └── verify_part4_sql.py                      # Comprehensive verification suite for Part 4 SQL
+│
+└── part-5-admin-review/
+    ├── voicecare_phase2_part5_admin_review.sql  # 4 administrative review, listing & stats RPCs
+    ├── voicecare_phase2_part5_design.md         # State machine, adjudication flow & UI design
+    ├── voicecare_phase2_part5_notes.md          # Concurrency row-locking, audit trails & RLS notes
+    └── verify_part5_sql.py                      # Static verification suite for Part 5 SQL
 ```
 
 ---
@@ -103,6 +109,17 @@ docs/phase-2/
   - **Double-Booking Prevention (`book_appointment`, `reschedule_appointment`):** Dual PostgreSQL advisory locks (`doctor_slot` and `patient_slot`) combined with database exclusion constraints.
   - **Appointment Lifecycle:** Patient cancellation with reason (`patient_cancel_appointment`), doctor response with mandatory reason (`doctor_respond_appointment`), consultation closure (`doctor_close_appointment`), and reminder management (`dismiss_reminder`).
 
+### Part 5: Admin Review Dashboard & Doctor Verification Workflow
+- **Location:** `docs/phase-2/part-5-admin-review/`
+- **Purpose:** Provides administrative adjudication RPCs, queue search/filtering, statistics, and secure document viewing.
+- **Key Capabilities:**
+  - **Atomic Application Review (`admin_review_doctor_application`):** Gated strictly to `public.is_admin()`. Prohibits admin self-review. Acquires dual `FOR UPDATE` row locks on `public.doctors` and `public.doctor_verifications`.
+  - **Approval Transition:** On approval, verifies credential completeness and document presence ($\ge 1$), updates verification status to `'approved'`, activates `doctors.is_approved = true`, and safely promotes `profiles.role` from `'patient'` to `'doctor'`.
+  - **Rejection Transition:** On rejection, mandates non-empty clinical/credential reason (5–1000 characters), sets status to `'rejected'`, preserves `doctors.is_approved = false`, retains role as `'patient'`, and preserves submitted documents for compliance audit trails.
+  - **Queue Search & Metrics (`admin_list_doctor_applications`, `admin_get_application_stats`, `admin_get_doctor_application_details`):** Paginated, filtered search over applications without leaking private patient demographic data.
+  - **Secure Document Viewing:** Edge Function (`supabase/functions/create-doctor-document-view-url/index.ts`) verifies admin session, validates application document ownership, and issues 300-second presigned read URLs from the private `doctor-docs` bucket.
+  - **React Admin Review Dashboard:** Full-featured, accessible UI with overview metric cards, searchable queue table, credential inspection modal, approval double-confirmation, and rejection reason input modal.
+
 ---
 
 ## 4. Intended Review Order and Dependencies
@@ -114,12 +131,14 @@ flowchart LR
     P1["Part 1: Database Foundation<br/>(Tables, Types, Constraints)"] --> P2["Part 2: Auth & Roles<br/>(RLS, Triggers, Grants)"]
     P2 --> P3["Part 3: Storage<br/>(Private Bucket, Storage RLS)"]
     P3 --> P4["Part 4: Appointment Engine<br/>(Transactional RPCs & Locking)"]
+    P4 --> P5["Part 5: Admin Review<br/>(Doctor Adjudication & Dashboard)"]
 ```
 
 1. **Part 1** establishes the tables and foreign keys required by Part 2.
-2. **Part 2** establishes the user roles, helper functions, and base grants required by Part 3 and Part 4.
-3. **Part 3** creates the storage infrastructure and document deletion queue referenced in Part 4.
+2. **Part 2** establishes the user roles, helper functions, and base grants required by Part 3, Part 4, and Part 5.
+3. **Part 3** creates the storage infrastructure and document deletion queue referenced in Part 4 and Part 5.
 4. **Part 4** coordinates transactions across all underlying tables and storage objects.
+5. **Part 5** establishes administrative adjudication, role promotion from patient to doctor, and document review.
 
 ---
 
@@ -169,12 +188,13 @@ During the Phase 2 audit, the following cross-part interactions were identified,
 To verify all Phase 2 files locally, run the master verification script using Python 3:
 
 ```bash
-# Run the complete Phase 2 verification suite (Parts 1 to 4)
+# Run the complete Phase 2 verification suite (Parts 1 to 5)
 python docs/phase-2/verify_all_phase2.py
 
 # Or run individual part verification scripts:
 python docs/phase-2/part-3-storage-verification/verify_storage_sql.py
 python docs/phase-2/part-4-appointment-engine/verify_part4_sql.py
+python docs/phase-2/part-5-admin-review/verify_part5_sql.py
 ```
 
 All verification suites exit with code `0` on success and print itemized results for every security assertion.

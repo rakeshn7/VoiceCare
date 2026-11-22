@@ -8,6 +8,7 @@ import {
   Globe,
   Home,
   Mic,
+  Shield,
   Stethoscope,
 } from 'lucide-react'
 
@@ -27,7 +28,7 @@ const NAV_ITEMS: { screen: Screen; icon: ReactNode; labelKey: Parameters<typeof 
 ]
 
 // Screens where the header shows a back arrow instead of brand
-const SHOW_BACK: Screen[] = ['voice', 'doctors']
+const SHOW_BACK: Screen[] = ['voice', 'doctors', 'admin']
 // Screens that render their own full-page UI (no shell header/nav)
 const FULLSCREEN: Screen[] = ['welcome', 'booking']
 
@@ -67,15 +68,33 @@ export function AppShell({ children, lang, currentScreen, onNavigate, onChangeLa
             </div>
           )}
 
-          {/* Language selector */}
-          <button
-            type="button"
-            onClick={onChangeLang}
-            className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-teal-700 bg-slate-100 hover:bg-teal-50 px-2.5 py-1.5 rounded-full transition-colors border border-slate-200"
-          >
-            <Globe className="w-3.5 h-3.5" />
-            <span>{langObj?.nativeName ?? 'EN'}</span>
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Admin Portal Toggle */}
+            <button
+              type="button"
+              onClick={() => onNavigate(currentScreen === 'admin' ? 'home' : 'admin')}
+              className={`px-2.5 py-1.5 rounded-full border transition-colors flex items-center gap-1.5 text-xs font-semibold ${
+                currentScreen === 'admin'
+                  ? 'bg-slate-900 text-teal-300 border-slate-800'
+                  : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200'
+              }`}
+              title={t('adminPortal', lang)}
+              aria-label={t('adminPortal', lang)}
+            >
+              <Shield className="w-3.5 h-3.5 text-teal-600" />
+              <span className="hidden sm:inline">{t('adminPortal', lang)}</span>
+            </button>
+
+            {/* Language selector */}
+            <button
+              type="button"
+              onClick={onChangeLang}
+              className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-teal-700 bg-slate-100 hover:bg-teal-50 px-2.5 py-1.5 rounded-full transition-colors border border-slate-200"
+            >
+              <Globe className="w-3.5 h-3.5" />
+              <span>{langObj?.nativeName ?? 'EN'}</span>
+            </button>
+          </div>
         </div>
       </header>
 

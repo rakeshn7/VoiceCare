@@ -18,6 +18,51 @@ export type Screen =
   | 'doctors'
   | 'booking'
   | 'appointments'
+  | 'admin'
+
+// ─── Admin Review & Doctor Verification ──────────────────────────────────────
+
+export type ApplicationVerificationStatus = 'pending' | 'approved' | 'rejected' | 'suspended'
+
+export interface DoctorDocumentRecord {
+  id: string
+  documentType: 'medical_license' | 'degree_certificate' | 'identity_proof' | 'other'
+  documentName: string
+  storagePath: string
+  createdAt: string
+}
+
+export interface DoctorApplication {
+  doctorId: string
+  fullName: string
+  phone: string
+  specialty: string
+  qualification: string
+  experienceYears: number
+  consultationFee: number
+  clinicName: string
+  clinicAddress: string
+  status: ApplicationVerificationStatus
+  registrationNumber: string
+  issuingAuthority: string
+  documentCount: number
+  isApproved: boolean
+  isActive: boolean
+  submittedAt: string
+  reviewedAt?: string | null
+  adminNotes?: string | null
+  bio?: string
+  languages?: string[]
+  documents?: DoctorDocumentRecord[]
+}
+
+export interface AdminStats {
+  pendingCount: number
+  approvedCount: number
+  rejectedCount: number
+  suspendedCount: number
+  totalCount: number
+}
 
 // ─── Doctor & Clinic ─────────────────────────────────────────────────────────
 

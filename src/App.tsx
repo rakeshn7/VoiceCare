@@ -7,6 +7,7 @@ import { VoicePage } from './pages/VoicePage'
 import { DoctorDiscoveryPage } from './pages/DoctorDiscoveryPage'
 import { BookingPage } from './pages/BookingPage'
 import { AppointmentsPage } from './pages/AppointmentsPage'
+import { AdminDashboard } from './components/admin/AdminDashboard'
 import { useAppointments } from './hooks/useAppointments'
 import { SAMPLE_DOCTORS } from './data/doctors'
 
@@ -153,6 +154,10 @@ function App() {
           onReschedule={handleReschedule}
           onNavigate={navigate}
         />
+      )}
+
+      {screen === 'admin' && (
+        <AdminDashboard lang={lang} onNavigate={navigate} />
       )}
     </AppShell>
   )
