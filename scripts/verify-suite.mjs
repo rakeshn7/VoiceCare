@@ -116,10 +116,12 @@ console.log('\n4. Phone Number Validation Logic:')
 function isValidPhone(val) {
   const trimmed = val.trim()
   if (!trimmed) return false
-  return /^\d{10}$/.test(trimmed)
+  return /^[6-9]\d{9}$/.test(trimmed)
 }
 
-assert(isValidPhone('9876543210'), '10-digit number 9876543210 is accepted')
+assert(isValidPhone('9876543210'), '10-digit number 9876543210 starting with 9 is accepted')
+assert(!isValidPhone('1234567890'), '10-digit number starting with 1 is rejected (matches DB constraint ^[6-9][0-9]{9}$)')
+assert(!isValidPhone('5555555555'), '10-digit number starting with 5 is rejected')
 assert(!isValidPhone('987654321'), '9-digit number is rejected')
 assert(!isValidPhone('98765432100'), '11-digit number is rejected')
 assert(!isValidPhone('98765abcde'), 'Alphanumeric string is rejected')

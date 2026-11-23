@@ -44,13 +44,13 @@ All automated test suites, static verifiers, and application builds pass with **
 ================================================================================
 VOICECARE AUTOMATED AUDIT & VERIFICATION SUITE
 ================================================================================
-TOTAL AUDIT CHECKS: 103
-PASSED: 103
+TOTAL AUDIT CHECKS: 105
+PASSED: 105
 FAILED: 0
 ALL AUDIT CHECKS PASSED SUCCESSFULLY!
 
 > tsc -b && vite build
-✓ built in 359ms (0 TypeScript errors)
+✓ built in 449ms (0 TypeScript errors)
 
 > npm run lint
 (0 lint warnings, 0 lint errors)
@@ -61,7 +61,7 @@ ALL AUDIT CHECKS PASSED SUCCESSFULLY!
  [PASS 3/10] Custom Enum Types Audit: All 4 custom enum types verified.
  [PASS 4/10] Public Directory Views Audit: All 3 public directory views verified.
  [PASS 5/10] Row Level Security Enablement Audit: Explicit RLS on all 12 tables verified.
- [PASS 6/10] Function Inventory & Hardening Audit: All 39 functions verified with SECURITY DEFINER & pg_catalog search path.
+ [PASS 6/10] Function Inventory & Hardening Audit: All 39 functions verified with appropriate DEFINER (35) / INVOKER (4) & pg_catalog search path.
  [PASS 7/10] System & Audit Triggers Audit: All 13 triggers verified.
  [PASS 8/10] Cross-Part Invariants & Security Hardening: Quota locks, phone regex, GiST exclusion constraints verified.
  [PASS 9/10] Supabase Edge Functions Security Audit: JWT auth, admin gating, MIME whitelist, TTL limits verified.

@@ -146,7 +146,7 @@ export function BookingPage({
 
     if (!draft.patientPhone.trim()) {
       newErrors.patientPhone = t('required', lang)
-    } else if (!/^\d{10}$/.test(draft.patientPhone.replace(/\s/g, ''))) {
+    } else if (!/^[6-9]\d{9}$/.test(draft.patientPhone.replace(/\s/g, ''))) {
       newErrors.patientPhone = t('validPhoneError', lang)
     }
     setErrors(newErrors)
