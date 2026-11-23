@@ -32,7 +32,7 @@ flowchart TD
     end
 
     subgraph Part3["Part 3: Private Storage & Queue"]
-        S1["Storage Bucket Setup<br/>• private 'doctor-docs' bucket<br/>• 10MB limit, strict MIME whitelist"]
+        S1["Storage Bucket Verification<br/>• read-only check on 'doctor-docs'<br/>• private, 10MB limit, strict MIME whitelist"]
         S2["Storage RLS Policies (4)<br/>• Folder isolation: {doctor_id}/*<br/>• is_doctor_document_owner()"]
         S3["Storage Deletion Queue<br/>• storage_deletion_queue table<br/>• enqueue trigger on document delete"]
     end
@@ -105,7 +105,7 @@ All DDL and DML statements in Phase 2 are authored with safe re-execution semant
 | **Functions** | `CREATE OR REPLACE FUNCTION public.<func_name> (...)` | Overwrites function bodies with latest hardened definitions. |
 | **Triggers** | `DROP TRIGGER IF EXISTS <trg_name> ON ...; CREATE TRIGGER ...` | Seamlessly updates trigger bindings without collisions. |
 | **RLS Policies** | `DROP POLICY IF EXISTS "<pol_name>" ON ...; CREATE POLICY ...` | Replaces policies cleanly without "policy already exists" aborts. |
-| **Storage Buckets** | `INSERT INTO storage.buckets (...) ON CONFLICT (id) DO UPDATE ...` | Updates bucket configuration (file size limit, MIME types) idempotently. |
+| **Storage Buckets** | Pre-provisioned via Supabase Dashboard / Storage API; verified read-only via `SELECT ... FROM storage.buckets WHERE id = 'doctor-docs'` | Read-only fail-closed verification of privacy (`public = false`), 10 MB limit (`10485760`), and exact MIME allowlist. Zero direct DML or table DDL on Supabase-managed storage tables. |
 
 ---
 
@@ -135,5 +135,10 @@ Before triggering migrations in Supabase:
 - [ ] Supabase project PostgreSQL version verified to be **15.0 or higher** (`SELECT version();`).
 - [ ] Schema `auth` exists and is managed by Supabase Auth (`SELECT schema_name FROM information_schema.schemata WHERE schema_name = 'auth';`).
 - [ ] Schema `storage` exists with `storage.buckets` and `storage.objects` (`SELECT table_name FROM information_schema.tables WHERE table_schema = 'storage';`).
+- [ ] Private storage bucket `doctor-docs` provisioned in Supabase Dashboard (Storage ➔ New Bucket) with:
+  - **Bucket Name:** `doctor-docs`
+  - **Public:** OFF (`public = false`)
+  - **Upload file size limit:** `10 MB` (`10485760` bytes)
+  - **Allowed MIME types:** `application/pdf`, `image/png`, `image/jpeg`, `image/webp`
 - [ ] Extension `btree_gist` enabled for dual overlap exclusion constraints (`CREATE EXTENSION IF NOT EXISTS btree_gist;`).
 - [ ] Master database role (`postgres`) credentials available for migration execution.

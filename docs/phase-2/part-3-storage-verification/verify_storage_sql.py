@@ -43,6 +43,9 @@ def run_checks(sql_path: Path) -> bool:
         (r'(?m)^\s*ALTER\s+TABLE\s+storage\.', "ALTER TABLE on storage schema is prohibited (must verify via preflight, not alter Supabase-managed tables)."),
         (r'(?m)^\s*REVOKE\s+[^;]+?\bON\s+(?:TABLE\s+)?storage\.', "REVOKE on storage schema is prohibited (causes 42501 must be owner of table buckets/objects)."),
         (r'(?m)^\s*GRANT\s+[^;]+?\bON\s+(?:TABLE\s+)?storage\.', "GRANT on storage schema is prohibited (causes 42501 must be owner of table buckets/objects)."),
+        (r'(?m)^\s*INSERT\s+INTO\s+storage\.buckets', "Direct SQL INSERT into storage.buckets is prohibited (bucket must be provisioned via Dashboard/API)."),
+        (r'(?m)^\s*UPDATE\s+storage\.buckets', "Direct SQL UPDATE on storage.buckets is prohibited (bucket must be managed via Dashboard/API)."),
+        (r'(?m)^\s*DELETE\s+FROM\s+storage\.buckets', "Direct SQL DELETE on storage.buckets is prohibited."),
     ]
     for pattern, desc in forbidden_executable:
         match = re.search(pattern, executable_sql, re.IGNORECASE)
@@ -66,7 +69,7 @@ def run_checks(sql_path: Path) -> bool:
 
     # 4. Check required DDL, functions, and structures
     required_structures = [
-        ("Bucket configuration", "INSERT INTO storage.buckets"),
+        ("Bucket read-only verification", "SELECT * INTO v_bucket FROM storage.buckets WHERE id = 'doctor-docs';"),
         ("Bucket name 'doctor-docs'", "'doctor-docs'"),
         ("Storage deletion queue table", "CREATE TABLE IF NOT EXISTS public.storage_deletion_queue"),
         ("Queue status check constraint", "chk_storage_deletion_queue_status"),

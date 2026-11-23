@@ -33,10 +33,22 @@ This checklist defines the operational steps required to deploy the **VoiceCare 
   - Log in to your Supabase Dashboard: [https://supabase.com/dashboard](https://supabase.com/dashboard)
   - Navigate to **Project Settings** ➔ **Database**.
   - Confirm PostgreSQL version is **15.0 or higher**.
-  - Under **Extensions**, ensure `btree_gist` is enabled. If not:
-    ```sql
-    CREATE EXTENSION IF NOT EXISTS btree_gist;
-    ```
+  - Under **Extensions**, ensure `btree_gist` is enabled (the migration also contains `CREATE EXTENSION IF NOT EXISTS btree_gist;`).
+
+- [ ] **4. Provision Private Storage Bucket in Supabase Dashboard (MANDATORY PRE-REQUISITE)**
+  - Storage buckets are managed by Supabase (`supabase_storage_admin`) and must be provisioned through the Dashboard prior to migration execution:
+    1. Open the Supabase Dashboard ➔ Select your project.
+    2. In the left navigation, click **Storage**.
+    3. Click **New bucket**.
+    4. Configure the bucket with exact settings:
+       - **Name:** `doctor-docs` (exact lowercase match)
+       - **Public bucket:** **OFF** (toggle OFF so it is strictly private)
+       - Expand **Additional configuration**:
+         - **Restrict file size:** `10 MB` (or enter `10485760` bytes)
+         - **Allowed MIME types:** Specify exactly:
+           `application/pdf, image/png, image/jpeg, image/webp`
+    5. Click **Create bucket**.
+  *(Note: The database migration performs a read-only verification asserting these exact three parameters and will halt execution with error code P0002 if missing or 22023 if misconfigured).*
 
 ---
 
@@ -75,19 +87,16 @@ Select **one** of the two supported deployment methods:
 
 ---
 
-## 4. Supabase Storage Configuration Stage
+## 4. Post-Migration Storage Policy Verification Stage
 
-- [ ] 1. In Supabase Dashboard, navigate to **Storage**.
-- [ ] 2. Verify bucket `doctor-docs` is present:
-  - **Public:** `false` (Private bucket).
-  - **File size limit:** `10 MB` (10,485,760 bytes).
-  - **Allowed MIME types:** `application/pdf`, `image/jpeg`, `image/png`.
-- [ ] 3. Navigate to **Storage** ➔ **Policies**:
-  - Verify that the 4 RLS policies on `storage.objects` are active:
+- [ ] 1. In Supabase Dashboard, navigate to **Storage** ➔ **Policies**.
+- [ ] 2. Select table **`storage.objects`**:
+  - Verify that the 4 VoiceCare RLS policies targeting `doctor-docs` are active:
     - `doctor_docs: select own or admin`
     - `doctor_docs: insert own or admin`
     - `doctor_docs: update own or admin`
     - `doctor_docs: delete own or admin`
+- [ ] 3. Verify zero foreign permissive policies expose `doctor-docs` to unauthenticated users or `PUBLIC`.
 
 ---
 

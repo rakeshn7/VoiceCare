@@ -281,16 +281,19 @@ def run_e2e_verification() -> bool:
         errors.append("Missing SLOT_ALREADY_BOOKED error handling in booking RPC.")
     print(" [PASS] Concurrency & double-booking protection: Dual GiST exclusion constraints and SLOT_ALREADY_BOOKED verified.")
 
-    # 8.8 Storage Bucket Non-Overwrite & Comprehensive Verification Invariant
-    if "ON CONFLICT (id) DO NOTHING;" not in consolidated_text:
-        errors.append("Storage bucket configuration missing ON CONFLICT (id) DO NOTHING; (risk of overwriting existing bucket config).")
-    if re.search(r'INSERT\s+INTO\s+storage\.buckets[^;]+?ON\s+CONFLICT[^;]+?DO\s+UPDATE', consolidated_text, re.IGNORECASE):
-        errors.append("Prohibited ON CONFLICT DO UPDATE SET found on storage.buckets. Must use DO NOTHING to preserve existing bucket settings.")
+    # 8.8 Storage Bucket Read-Only Verification Invariant (Zero DML on storage.buckets)
+    executable_sql = strip_sql_comments(consolidated_text)
+    if re.search(r'(?m)^\s*INSERT\s+INTO\s+storage\.buckets', executable_sql, re.IGNORECASE):
+        errors.append("Direct SQL INSERT into storage.buckets found. Must provision bucket via Dashboard/API and verify read-only.")
+    if re.search(r'(?m)^\s*UPDATE\s+storage\.buckets', executable_sql, re.IGNORECASE):
+        errors.append("Direct SQL UPDATE on storage.buckets found. Must manage bucket via Dashboard/API.")
+    if "v_bucket.public IS NOT FALSE" not in consolidated_text:
+        errors.append("Storage bucket configuration missing public = false privacy verification assertion.")
     if "v_bucket.file_size_limit IS DISTINCT FROM 10485760" not in consolidated_text:
         errors.append("Storage bucket configuration missing file_size_limit verification assertion (10485760 bytes).")
     if "v_expected_mimes" not in consolidated_text or "allowed_mime_types" not in consolidated_text:
         errors.append("Storage bucket configuration missing allowed_mime_types allowlist verification assertion.")
-    print(" [PASS] Storage bucket safety: Non-destructive ON CONFLICT (id) DO NOTHING and full configuration verification (privacy, size limit, MIME types) verified.")
+    print(" [PASS] Storage bucket safety: Zero direct DML (INSERT/UPDATE/DELETE) on storage.buckets and read-only fail-closed verification active.")
 
     # 8.9 Pre-Migration Constraint Conflict Safety Verification
     if "PRE-MIGRATION CONSTRAINT CONFLICT" not in consolidated_text:

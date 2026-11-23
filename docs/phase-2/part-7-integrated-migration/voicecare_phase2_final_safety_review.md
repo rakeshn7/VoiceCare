@@ -141,12 +141,12 @@ Every SQL statement in `voicecare_phase2_consolidated_migration.sql` capable of 
 
 | Mutation Category | Occurrences in SQL | Target Objects | What Existing Data / Config It Can Affect | Can It Overwrite Existing Values? | Safe on Non-Empty Database? | Reversible? |
 | :--- | :---: | :--- | :--- | :---: | :---: | :---: |
-| **`storage.buckets` Configuration** | 1 | `storage.buckets` (`'doctor-docs'`) | Only affects the `'doctor-docs'` bucket row if it already exists. | **NO.** `ON CONFLICT (id) DO NOTHING;` creates bucket if absent. If bucket already exists, an explicit fail-closed verification block checks all 3 required settings (`public = false`, `file_size_limit = 10485760`, and exact MIME allowlist). If any setting diverges, it does NOT overwrite; it aborts with a clear error requiring administrator review. | **YES** | **YES** |
-| **`ON CONFLICT DO NOTHING`** | 2 | `public.profiles` (`handle_new_user`), `storage.buckets` (`doctor-docs`) | None. Skips insert if primary key already exists. | **NO.** Zero data or configuration is modified when conflict is detected. | **YES** | **YES** |
+| **`storage.buckets` Configuration** | 0 | `storage.buckets` | Zero direct DML (`INSERT`/`UPDATE`/`DELETE`) executed. Migration performs strictly READ-ONLY fail-closed verification against `storage.buckets`. | **NO.** Zero writes or mutations. Bucket is provisioned via Supabase Dashboard / Storage API and verified read-only. | **YES** | **YES** |
+| **`ON CONFLICT DO NOTHING`** | 1 | `public.profiles` (`handle_new_user`) | None. Skips insert if primary key already exists. | **NO.** Zero data or configuration is modified when conflict is detected. | **YES** | **YES** |
 | **`ON CONFLICT DO UPDATE`** | 1 | `public.patients` (`complete_patient_onboarding` RPC) | Patient onboarding profile record for `auth.uid()`. | **CONTROLLED.** Only updates patient details when the patient explicitly re-submits their onboarding form. Uses `COALESCE(EXCLUDED.col, patients.col)` to prevent nulling existing data. | **YES** | **YES** |
 | **`DROP CONSTRAINT`** | 3 | `doctor_schedules.uq_doctor_schedules_no_overlap`, `appointments.uq_doctor_no_appointment_overlap`, `appointments.uq_patient_no_appointment_overlap` | Existing constraints on schedules and appointments. | **NO.** PostgreSQL lacks `ADD CONSTRAINT IF NOT EXISTS` for exclusion constraints. Dropping before re-adding is required for idempotency. Guarded by explicit conflict pre-checks (Section 6.3). | **YES** | **YES** |
 | **`DROP POLICY`** | 41 | RLS policies on all 12 tables and `storage.objects` | Row Level Security policies. | **NO.** In PostgreSQL, `CREATE POLICY` has no `OR REPLACE` syntax. Dropping existing policy names before re-creating them is the standard idempotent pattern. Does not delete, modify, or corrupt table data. | **YES** | **YES** |
-| **`ALTER TABLE ... ENABLE RLS`** | 13 | All 12 application tables + `storage.objects` | Row filtering mode. | **NO.** Enables RLS on tables. Idempotent if RLS is already active. Does not modify table rows. | **YES** | **YES** |
+| **`ALTER TABLE ... ENABLE RLS`** | 12 | All 12 application tables | Row filtering mode. | **NO.** Enables RLS on tables. Idempotent if RLS is already active. Does not modify table rows. (`storage.objects` is asserted read-only). | **YES** | **YES** |
 | **`UPDATE` (in RPCs & triggers)** | 19 | `profiles`, `doctors`, `appointments`, `in_app_reminders`, `doctor_verifications` | Specific rows targeted by user actions (e.g. appointment cancellation, admin approval). | **CONTROLLED.** Every `UPDATE` statement in the migration is enclosed inside a transactional RPC or trigger with a strict `WHERE id = ...` or `WHERE doctor_id = ...` clause under row lock (`FOR UPDATE`). Zero unconditional table-wide updates exist. | **YES** | **YES** |
 | **`DELETE FROM`** | 0 | None | None. Zero `DELETE` statements exist in the consolidated migration script. | **N/A** | **YES** | **YES** |
 | **`DROP TABLE`** | 0 | None | None. Zero `DROP TABLE` statements exist in the consolidated migration script. | **N/A** | **YES** | **YES** |
@@ -154,10 +154,9 @@ Every SQL statement in `voicecare_phase2_consolidated_migration.sql` capable of 
 
 ### 6.2 Storage Bucket Safety & Verification Deep Dive
 
-- **Vulnerability Identified in Initial Draft:** The initial storage setup used `INSERT INTO storage.buckets (...) ON CONFLICT (id) DO UPDATE SET public = false, file_size_limit = ..., allowed_mime_types = ...;`. If a staging database had an existing bucket named `doctor-docs` with custom settings, re-running the migration would have silently overwritten them.
-- **Limitation of Partial Fix:** Changing solely to `ON CONFLICT (id) DO NOTHING` with a check for `public = true` ensured the bucket was private, but failed to verify whether an existing bucket satisfied the required 10 MB file size limit and allowed MIME types.
-- **Fail-Closed Verification Strategy Implemented:**
-  1. **Non-Destructive Creation:** Uses `ON CONFLICT (id) DO NOTHING;` so that pre-existing bucket configurations are never silently modified.
+- **Vulnerability Identified in Initial Draft:** The initial storage setup used `INSERT INTO storage.buckets (...) ON CONFLICT (id) DO UPDATE SET public = false, file_size_limit = ..., allowed_mime_types = ...;`. If a staging database had an existing bucket named `doctor-docs` with custom settings, re-running the migration would have silently overwritten them. Furthermore, in Supabase, `storage.buckets` is owned by `supabase_storage_admin`; direct DML from the SQL Editor violates Supabase architectural guidance.
+- **Fail-Closed Read-Only Verification Implemented:**
+  1. **Zero Direct DML:** No `INSERT`, `UPDATE`, or `DELETE` statements target `storage.buckets`. The bucket must be provisioned ahead of time via the Supabase Dashboard or Storage API.
   2. **Comprehensive Fail-Closed Verification Block:**
      ```sql
      DO $$
@@ -194,8 +193,8 @@ Every SQL statement in `voicecare_phase2_consolidated_migration.sql` capable of 
      END $$;
      ```
   3. **Explicit Mismatch Handling Strategy (Abort with Clear Error):**
-     Instead of silently mutating an existing bucket or allowing an insecure bucket (e.g. public, unlimited file size, or arbitrary MIME types) to persist, the migration aborts the transaction with code `22023` and provides the exact `UPDATE storage.buckets SET ...` SQL for the administrator to review and apply manually.
-  4. **Accurate SQL Documentation:** Corrected outdated comments; documentation accurately reflects `ON CONFLICT (id) DO NOTHING` paired with comprehensive fail-closed assertion.
+     Instead of silently mutating an existing bucket or allowing an insecure bucket (e.g. public, unlimited file size, or arbitrary MIME types) to persist, the migration aborts the transaction with code `22023` and provides exact Supabase Dashboard reconfiguration instructions for the administrator.
+  4. **Accurate SQL Documentation:** Corrected outdated comments; documentation accurately reflects read-only verification paired with comprehensive fail-closed assertion.
   5. **Storage Policy Isolation Preserved:** All 4 storage RLS policies on `storage.objects` (`"doctor_docs: select own or admin"`, etc.) remain strictly scoped to `bucket_id = 'doctor-docs'`. The foreign permissive policy preflight check in Section 0 remains active and fail-closed.
   6. **Respect for Supabase-Managed Schema Ownership (`supabase_storage_admin`):**
      In Supabase PostgreSQL, internal storage tables (`storage.buckets` and `storage.objects`) are owned by `supabase_storage_admin`. Attempting to execute table-level DDL such as `COMMENT ON TABLE storage.buckets`, `ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY`, `REVOKE ... ON storage.*`, or `GRANT ... ON storage.*` as the `postgres` role in the SQL Editor raises `ERROR: 42501: must be owner of table buckets/objects`. The migration was hardened to:

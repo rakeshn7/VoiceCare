@@ -164,36 +164,22 @@ END $$;
 --
 -- Security rules:
 --   - id / name : 'doctor-docs'
---   - public    : false (STRICTLY PRIVATE - direct public CDN URLs disabled)
---   - file_size_limit   : 10485760 bytes (10 MB per file)
---   - allowed_mime_types: PDF and standard raster/lossless images
---   - Non-destructive insert (ON CONFLICT DO NOTHING) creates bucket if absent.
---   - Comprehensive verification block asserts all 3 required security settings
---     (privacy, size limit, and MIME allowlist), aborting with clear error if mismatched.
+-- =============================================================================
+-- SECTION 1: STORAGE BUCKET VERIFICATION (READ-ONLY)
+--
+-- Supabase Architecture Note:
+-- Storage buckets are provisioned externally via the Supabase Dashboard or Storage API.
+-- This migration performs strictly READ-ONLY verification against storage.buckets
+-- to assert that 'doctor-docs' exists and strictly conforms to VoiceCare security boundaries:
+--   - public             : false (STRICTLY PRIVATE - direct public CDN URLs disabled)
+--   - file_size_limit    : 10485760 bytes (10 MB per file)
+--   - allowed_mime_types : Exactly 'application/pdf', 'image/png', 'image/jpeg', 'image/webp'
+--
+-- Zero INSERT, UPDATE, DELETE, ALTER, or COMMENT operations are executed on storage.buckets.
+-- If the bucket is missing or misconfigured, the transaction aborts with error code '22023'
+-- instructing the administrator to configure the bucket in the Supabase Dashboard.
 -- =============================================================================
 
-INSERT INTO storage.buckets (
-    id,
-    name,
-    public,
-    file_size_limit,
-    allowed_mime_types
-)
-VALUES (
-    'doctor-docs',
-    'doctor-docs',
-    false, -- Strictly private
-    10485760, -- 10 MB in bytes
-    ARRAY[
-        'application/pdf',
-        'image/png',
-        'image/jpeg',
-        'image/webp'
-    ]::text[]
-)
-ON CONFLICT (id) DO NOTHING;
-
--- Comprehensive bucket configuration verification: fail closed if any setting diverges
 DO $$
 DECLARE
     v_bucket RECORD;
@@ -203,7 +189,15 @@ BEGIN
     SELECT * INTO v_bucket FROM storage.buckets WHERE id = 'doctor-docs';
 
     IF NOT FOUND THEN
-        RAISE EXCEPTION 'CRITICAL CONFIGURATION ERROR: Storage bucket "doctor-docs" was not found in storage.buckets.'
+        RAISE EXCEPTION
+            'PREREQUISITE ERROR: Storage bucket "doctor-docs" was not found in storage.buckets!%
+Please provision the bucket in the Supabase Dashboard before executing this migration:
+  1. Navigate to Supabase Dashboard -> Storage -> New bucket
+  2. Bucket Name: doctor-docs
+  3. Public Bucket: OFF (Private)
+  4. Restrict file size: 10 MB (10485760 bytes)
+  5. Allowed MIME types: application/pdf, image/png, image/jpeg, image/webp',
+            E'\n'
             USING ERRCODE = 'P0002';
     END IF;
 
@@ -238,15 +232,11 @@ BEGIN
             'Security Preflight Aborted: Storage bucket "doctor-docs" configuration mismatch!%
 Existing bucket configuration diverges from VoiceCare security requirements:%
 
-MANUAL ADMINISTRATOR REVIEW REQUIRED:
-An existing bucket "doctor-docs" was found with configuration diverging from VoiceCare security invariants.
-To safely reconcile the bucket configuration, an administrator should execute:
-
-  UPDATE storage.buckets
-  SET public = false,
-      file_size_limit = 10485760,
-      allowed_mime_types = ARRAY[''application/pdf'', ''image/png'', ''image/jpeg'', ''image/webp'']::text[]
-  WHERE id = ''doctor-docs'';
+MANUAL ADMINISTRATOR RECONFIGURATION REQUIRED:
+Update the bucket settings in the Supabase Dashboard (Storage -> doctor-docs -> Configuration):
+  - Public: OFF (Private)
+  - File size limit: 10 MB (10485760 bytes)
+  - Allowed MIME types: application/pdf, image/png, image/jpeg, image/webp
 
 Then re-run this migration.',
             E'\n', v_mismatches
