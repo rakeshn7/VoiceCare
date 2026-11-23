@@ -1727,7 +1727,9 @@ Then re-run this migration.',
     END IF;
 END $$;
 
-COMMENT ON TABLE storage.buckets IS 'Supabase Storage buckets registry';
+-- Note on storage.buckets:
+-- storage.buckets is an internal Supabase table owned by supabase_storage_admin.
+-- Zero table-level COMMENT ON or ALTER statements are executed on it to respect Supabase ownership boundaries.
 
 
 -- =============================================================================
@@ -1959,8 +1961,18 @@ COMMENT ON FUNCTION public.is_doctor_document_owner(text)
 -- Every policy explicitly begins with `bucket_id = 'doctor-docs'` to ensure zero leakage.
 -- =============================================================================
 
--- Ensure RLS is enabled on storage.objects
-ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
+-- Assert that storage.objects has Row Level Security enabled (managed by Supabase)
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_catalog.pg_class c
+        JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'storage' AND c.relname = 'objects' AND c.relrowsecurity = true
+    ) THEN
+        RAISE EXCEPTION 'Supabase prerequisite failed: storage.objects does not have Row Level Security enabled.'
+            USING ERRCODE = '55000';
+    END IF;
+END $$;
 
 -- ---------------------------------------------------------------------------
 -- Surgical cleanup: Drop existing / legacy doctor-docs policies only
@@ -2156,14 +2168,15 @@ CREATE TRIGGER trg_doctor_documents_storage_cleanup
 -- SECTION 5: PRIVILEGES AND ROLE LOCKDOWN (LEAST PRIVILEGE)
 -- =============================================================================
 
--- Ensure anon has ZERO access to doctor-docs and storage objects
-REVOKE ALL ON storage.buckets FROM anon;
-REVOKE ALL ON storage.objects FROM anon;
-
--- Authenticated clients need standard table-level access to storage schemas,
--- but actual operations are strictly gated by the RLS policies above.
-GRANT SELECT ON storage.buckets TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON storage.objects TO authenticated;
+-- Note on Supabase Storage Table Privileges:
+-- storage.buckets and storage.objects are internal Supabase tables owned by supabase_storage_admin.
+-- Table-level privileges are pre-configured by Supabase to enable the Storage API and client library.
+-- Access control to 'doctor-docs' is strictly enforced at row level via:
+--   1. storage.buckets.public = false (enforced in Section 1 above; anon has zero public access)
+--   2. RLS policies on storage.objects (Section 3 above) granting access exclusively
+--      to authenticated document owners and platform administrators matching path prefixes.
+--   3. Foreign permissive policy preflight (Section 0) ensuring zero unintended leakage.
+-- Zero table-level permission changes are applied to the storage schema.
 
 -- Storage Deletion Queue: Locked down completely from anon and normal users
 REVOKE ALL ON public.storage_deletion_queue FROM PUBLIC, anon, authenticated;

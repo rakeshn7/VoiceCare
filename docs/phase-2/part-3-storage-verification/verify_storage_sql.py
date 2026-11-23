@@ -39,6 +39,10 @@ def run_checks(sql_path: Path) -> bool:
         (r'DELETE\s+FROM\s+storage\.objects', "Direct SQL DELETE on storage.objects is strictly prohibited."),
         (r'INSERT\s+INTO\s+storage\.objects', "Direct SQL INSERT into storage.objects is prohibited (must use Storage API)."),
         (r'TRUNCATE\s+.*storage\.objects', "TRUNCATE on storage.objects is prohibited."),
+        (r'(?m)^\s*COMMENT\s+ON\s+TABLE\s+storage\.', "COMMENT ON TABLE storage.buckets is prohibited (causes 42501 must be owner of table buckets)."),
+        (r'(?m)^\s*ALTER\s+TABLE\s+storage\.', "ALTER TABLE on storage schema is prohibited (must verify via preflight, not alter Supabase-managed tables)."),
+        (r'(?m)^\s*REVOKE\s+[^;]+?\bON\s+(?:TABLE\s+)?storage\.', "REVOKE on storage schema is prohibited (causes 42501 must be owner of table buckets/objects)."),
+        (r'(?m)^\s*GRANT\s+[^;]+?\bON\s+(?:TABLE\s+)?storage\.', "GRANT on storage schema is prohibited (causes 42501 must be owner of table buckets/objects)."),
     ]
     for pattern, desc in forbidden_executable:
         match = re.search(pattern, executable_sql, re.IGNORECASE)
@@ -77,10 +81,7 @@ def run_checks(sql_path: Path) -> bool:
         ("Storage UPDATE policy", "CREATE POLICY \"doctor_docs: update own or admin\""),
         ("Storage DELETE policy", "CREATE POLICY \"doctor_docs: delete own or admin\""),
         ("Cleanup trigger on doctor_documents", "CREATE TRIGGER trg_doctor_documents_storage_cleanup"),
-        ("Revoke bucket access from anon", "REVOKE ALL ON storage.buckets FROM anon;"),
-        ("Revoke objects access from anon", "REVOKE ALL ON storage.objects FROM anon;"),
-        ("Grant authenticated bucket select", "GRANT SELECT ON storage.buckets TO authenticated;"),
-        ("Grant authenticated objects CRUD", "GRANT SELECT, INSERT, UPDATE, DELETE ON storage.objects TO authenticated;"),
+        ("Storage objects RLS verification", "storage.objects does not have Row Level Security enabled"),
         ("Revoke deletion queue from public/anon", "REVOKE ALL ON public.storage_deletion_queue FROM PUBLIC, anon, authenticated;"),
         ("Grant deletion queue select to authenticated", "GRANT SELECT ON public.storage_deletion_queue TO authenticated;"),
     ]

@@ -197,6 +197,11 @@ Every SQL statement in `voicecare_phase2_consolidated_migration.sql` capable of 
      Instead of silently mutating an existing bucket or allowing an insecure bucket (e.g. public, unlimited file size, or arbitrary MIME types) to persist, the migration aborts the transaction with code `22023` and provides the exact `UPDATE storage.buckets SET ...` SQL for the administrator to review and apply manually.
   4. **Accurate SQL Documentation:** Corrected outdated comments; documentation accurately reflects `ON CONFLICT (id) DO NOTHING` paired with comprehensive fail-closed assertion.
   5. **Storage Policy Isolation Preserved:** All 4 storage RLS policies on `storage.objects` (`"doctor_docs: select own or admin"`, etc.) remain strictly scoped to `bucket_id = 'doctor-docs'`. The foreign permissive policy preflight check in Section 0 remains active and fail-closed.
+  6. **Respect for Supabase-Managed Schema Ownership (`supabase_storage_admin`):**
+     In Supabase PostgreSQL, internal storage tables (`storage.buckets` and `storage.objects`) are owned by `supabase_storage_admin`. Attempting to execute table-level DDL such as `COMMENT ON TABLE storage.buckets`, `ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY`, `REVOKE ... ON storage.*`, or `GRANT ... ON storage.*` as the `postgres` role in the SQL Editor raises `ERROR: 42501: must be owner of table buckets/objects`. The migration was hardened to:
+     - Remove `COMMENT ON TABLE storage.buckets`.
+     - Replace `ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY` with a fail-closed preflight assertion verifying `relrowsecurity = true`.
+     - Remove unsupported table-level `REVOKE`/`GRANT` statements on `storage.buckets` and `storage.objects`, relying exclusively on bucket privacy (`public = false`) and fine-grained RLS policies on `storage.objects`.
 
 ### 6.3 GiST Exclusion Constraint Replacement & Conflict Pre-Check Deep Dive
 

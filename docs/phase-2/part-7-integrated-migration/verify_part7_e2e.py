@@ -28,6 +28,11 @@ P4_SQL = PHASE2_DIR / "part-4-appointment-engine" / "voicecare_phase2_part4_rpc.
 P5_SQL = PHASE2_DIR / "part-5-admin-review" / "voicecare_phase2_part5_admin_review.sql"
 P6_SQL = PHASE2_DIR / "part-6-audit-telemetry" / "voicecare_phase2_part6_audit.sql"
 
+def strip_sql_comments(sql: str) -> str:
+    sql_no_block = re.sub(r'/\*.*?\*/', '', sql, flags=re.DOTALL)
+    sql_no_comments = re.sub(r'--[^\n]*', '', sql_no_block)
+    return sql_no_comments
+
 def run_e2e_verification() -> bool:
     print("=" * 80)
     print("VOICECARE PHASE 2 - PART 7: INTEGRATED END-TO-END VERIFICATION SUITE")
@@ -291,6 +296,19 @@ def run_e2e_verification() -> bool:
     if "PRE-MIGRATION CONSTRAINT CONFLICT" not in consolidated_text:
         errors.append("Missing explicit conflict pre-check before GiST exclusion constraint replacement.")
     print(" [PASS] Constraint conflict pre-checks: Explicit conflict verification active before constraint replacement.")
+
+    # 8.10 Supabase-Managed Schema Privileges Safety (No unsupported DDL on storage.*)
+    executable_sql = strip_sql_comments(consolidated_text)
+    prohibited_storage_ddl = [
+        (r'(?m)^\s*COMMENT\s+ON\s+TABLE\s+storage\.', "Prohibited COMMENT ON TABLE on storage schema found (causes 42501 must be owner of table buckets)."),
+        (r'(?m)^\s*ALTER\s+TABLE\s+storage\.', "Prohibited ALTER TABLE on storage schema found (must verify via preflight, not alter Supabase-managed tables)."),
+        (r'(?m)^\s*REVOKE\s+[^;]+?\bON\s+(?:TABLE\s+)?storage\.', "Prohibited REVOKE on storage schema found (causes 42501 must be owner of table buckets/objects)."),
+        (r'(?m)^\s*GRANT\s+[^;]+?\bON\s+(?:TABLE\s+)?storage\.', "Prohibited GRANT on storage schema found (causes 42501 must be owner of table buckets/objects)."),
+    ]
+    for pattern, err_msg in prohibited_storage_ddl:
+        if re.search(pattern, executable_sql, re.IGNORECASE):
+            errors.append(f"{err_msg} (Violates Supabase-managed ownership boundary).")
+    print(" [PASS] Supabase-managed storage schema protection: Zero unsupported COMMENT, ALTER, GRANT, or REVOKE on storage.*.")
 
     # -------------------------------------------------------------------------
     # CHECK 9: Supabase Edge Functions Static Security Audit
